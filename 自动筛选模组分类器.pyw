@@ -618,8 +618,8 @@ class ClassifierCore:
         # mc百科验证码
         if "安全验证" in html and "captcha-box" in html:
             return True
-        # CloudFlare Turnstile / 拦截（含CurseForge）
-        if len(html) < 10000 and ("Checking your browser" in html or "cf-browser-verification" in html or "Just a moment" in html):
+        # CloudFlare Turnstile / 拦截（点击复选框型，含CurseForge）
+        if len(html) < 12000 and ("Checking your browser" in html or "cf-browser-verification" in html or "Just a moment" in html or "cf-turnstile" in html or "challenge-platform" in html):
             return True
         # 页面太小，可能是 CF 拦截
         if len(html) < 3000:
