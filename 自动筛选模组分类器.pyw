@@ -703,9 +703,8 @@ class ClassifierCore:
                     user_data = Path(tempfile.gettempdir()) / "_mcmod_browser_data"
                     user_data.mkdir(parents=True, exist_ok=True)
                     co.set_user_data_path(str(user_data))
-                    # 暂时不禁用隐藏，用户需要观察浏览器行为
-                    # co.set_argument("--window-position=-32000,-32000")
-                    # co.set_argument("--window-size=800,600")
+                    co.set_argument("--window-position=-32000,-32000")
+                    co.set_argument("--window-size=800,600")
                     main = ChromiumPage(co)
                     tabs = [(main, False)]
                     for _ in range(DEFAULT_MCMOD_WORKERS + DEFAULT_CF_WORKERS + 2 - 1):
@@ -737,14 +736,36 @@ class ClassifierCore:
                 except Exception:
                     pass
                 self._browser_tabs = []
+        # 清理浏览器缓存/临时文件
+        for pattern in ["_mcmod_debug.log", "_mcmod_captcha*", "_mcmod_browser_data*",
+                        "_cf_debug_*.html", "_mcmod_cookies.json"]:
+            for f in Path(tempfile.gettempdir()).glob(pattern):
+                try:
+                    if f.is_dir():
+                        import shutil
+                        shutil.rmtree(f, ignore_errors=True)
+                    else:
+                        f.unlink(missing_ok=True)
+                except Exception:
+                    pass
+
+    def close_browser(self):
+        """外部调用：主动关闭浏览器释放内存（2次筛选前）"""
+        self._cleanup_browser()
 
     def _browser_show(self):
-        """把浏览器窗口移到屏幕可见区域（验证码需要人工时）"""
-        pass  # 调试模式：不移动窗口
+        try:
+            self._browser_main_page.set.window.show()
+            self._browser_main_page.set.window.location(100, 100)
+            self._browser_main_page.set.window.size(800, 600)
+        except Exception:
+            pass
 
     def _browser_hide(self):
-        """把浏览器窗口移到屏幕外"""
-        pass  # 调试模式：不移动窗口
+        try:
+            self._browser_main_page.set.window.location(-32000, -32000)
+        except Exception:
+            pass
 
     def _browser_fetch(self, url: str) -> Optional[str]:
         """浏览器标签页池获取页面（带耗时日志）"""
@@ -2879,6 +2900,7 @@ class ServerBuilderCore:
         unknown_rows = [row for row in results if row["Category"] == "unknown"]
         if self.enable_second_pass:
             if unknown_rows:
+                self.classifier.close_browser()
                 retry_total = len(unknown_rows)
                 retry_worker_count = get_classification_worker_count(retry_total)
                 self.log_line(f"开始进行 2次筛选：仅重试首轮未确定的 {retry_total} 个模组。")
@@ -3656,20 +3678,23 @@ class App:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title(APP_TITLE)
-        self.root.geometry("980x760")
-        self.root.minsize(920, 680)
+        # 适配屏幕：取屏幕高度的 85% 或默认尺寸中较小的
+        screen_h = root.winfo_screenheight()
+        target_h = min(int(screen_h * 0.85), 860)
+        self.root.geometry(f"980x{max(target_h, 600)}")
+        self.root.minsize(900, 600)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self.mod_path_var = tk.StringVar()
         self.mod_dry_run_var = tk.BooleanVar(value=False)
         self.mod_use_mcmod_var = tk.BooleanVar(value=True)
-        self.mod_use_cf_var = tk.BooleanVar(value=True)
+        self.mod_use_cf_var = tk.BooleanVar(value=False)
         self.mod_second_pass_var = tk.BooleanVar(value=False)
 
         self.server_client_path_var = tk.StringVar()
         self.server_output_path_var = tk.StringVar()
         self.server_use_mcmod_var = tk.BooleanVar(value=True)
-        self.server_use_cf_var = tk.BooleanVar(value=True)
+        self.server_use_cf_var = tk.BooleanVar(value=False)
         self.server_second_pass_var = tk.BooleanVar(value=False)
 
         self.worker_thread: Optional[threading.Thread] = None
@@ -3682,14 +3707,20 @@ class App:
         self.root.after(150, self.poll_queue)
 
     def _on_close(self):
-        """退出时清理浏览器进程"""
+        """退出时清理浏览器进程和缓存"""
+        import subprocess, shutil
         try:
-            # 尝试清理可能存在的浏览器进程
-            import subprocess
-            subprocess.run(["taskkill", "/F", "/IM", "chrome.exe", "/FI", "WINDOWTITLE eq *mcmod*"], capture_output=True)
-            subprocess.run(["taskkill", "/F", "/IM", "msedge.exe", "/FI", "WINDOWTITLE eq *mcmod*"], capture_output=True)
+            subprocess.run(["taskkill", "/F", "/IM", "chrome.exe"], capture_output=True, timeout=5)
+            subprocess.run(["taskkill", "/F", "/IM", "msedge.exe"], capture_output=True, timeout=5)
         except Exception:
             pass
+        # 清理浏览器用户数据缓存
+        browser_dir = Path(tempfile.gettempdir()) / "_mcmod_browser_data"
+        if browser_dir.exists():
+            try:
+                shutil.rmtree(browser_dir, ignore_errors=True)
+            except Exception:
+                pass
         self.root.destroy()
 
     def build_ui(self) -> None:
@@ -3716,8 +3747,8 @@ class App:
         options = ttk.Frame(parent, padding=(0, 12, 0, 0))
         options.pack(fill="x")
         ttk.Checkbutton(options, text="仅试运行", variable=self.mod_dry_run_var).pack(side="left")
-        ttk.Checkbutton(options, text="MC百科", variable=self.mod_use_mcmod_var).pack(side="left", padx=(18, 0))
-        ttk.Checkbutton(options, text="CurseForge", variable=self.mod_use_cf_var).pack(side="left", padx=(18, 0))
+        ttk.Checkbutton(options, text="MC百科(需手动填验证码)", variable=self.mod_use_mcmod_var).pack(side="left", padx=(18, 0))
+        ttk.Checkbutton(options, text="CurseForge(较慢/需梯子)", variable=self.mod_use_cf_var).pack(side="left", padx=(18, 0))
         ttk.Checkbutton(options, text="2次筛选", variable=self.mod_second_pass_var).pack(side="left", padx=(18, 0))
         ttk.Button(options, text="开始分类", command=self.start_mod_task).pack(side="right")
 
@@ -3756,8 +3787,8 @@ class App:
 
         options = ttk.Frame(parent, padding=(0, 12, 0, 0))
         options.pack(fill="x")
-        ttk.Checkbutton(options, text="MC百科", variable=self.server_use_mcmod_var).pack(side="left")
-        ttk.Checkbutton(options, text="CurseForge", variable=self.server_use_cf_var).pack(side="left", padx=(18, 0))
+        ttk.Checkbutton(options, text="MC百科(需手动填验证码)", variable=self.server_use_mcmod_var).pack(side="left")
+        ttk.Checkbutton(options, text="CurseForge(较慢/需梯子)", variable=self.server_use_cf_var).pack(side="left", padx=(18, 0))
         ttk.Checkbutton(options, text="2次筛选", variable=self.server_second_pass_var).pack(side="left", padx=(18, 0))
         ttk.Button(options, text="开始制作服务端", command=self.start_server_task).pack(side="right")
 
@@ -3976,6 +4007,8 @@ class App:
             unknown_rows = [row for row in results if row["Category"] == "unknown"]
             if enable_second_pass:
                 if unknown_rows:
+                    # 释放浏览器内存（2次筛选不再需要联网查询）
+                    classifier.close_browser()
                     retry_total = len(unknown_rows)
                     retry_worker_count = get_classification_worker_count(retry_total)
                     self.emit("mod", "log", f"开始进行 2次筛选：仅重试首轮未确定的 {retry_total} 个模组")
@@ -4102,6 +4135,23 @@ class App:
             )
         except Exception:
             self.emit("server", "error", traceback.format_exc())
+            # 清理：如果 output_dir 已有服务端文件（已安装服务端阶段），保留文件
+            has_server = False
+            try:
+                has_server = any(output_dir.glob("*.jar")) if output_dir.exists() else False
+            except Exception:
+                pass
+            if not has_server and output_dir.exists():
+                try:
+                    import shutil
+                    shutil.rmtree(output_dir, ignore_errors=True)
+                except Exception:
+                    pass
+            # 清理浏览器
+            try:
+                classifier.close_browser()
+            except Exception:
+                pass
 
     def open_panel_path(self, panel_key: str, target: str) -> None:
         panel = self.get_panel(panel_key)
