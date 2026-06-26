@@ -618,8 +618,11 @@ class ClassifierCore:
         # mc百科验证码
         if "安全验证" in html and "captcha-box" in html:
             return True
-        # CloudFlare Turnstile / 拦截
-        if len(html) < 8000 and ("Checking your browser" in html or "cf-browser-verification" in html or "Just a moment" in html):
+        # CloudFlare Turnstile / 拦截（含CurseForge）
+        if len(html) < 10000 and ("Checking your browser" in html or "cf-browser-verification" in html or "Just a moment" in html):
+            return True
+        # 页面太小，可能是 CF 拦截
+        if len(html) < 3000:
             return True
         return False
 
@@ -681,8 +684,8 @@ class ClassifierCore:
                 except Exception:
                     pass
                 self._browser_tabs = []
-        # 清理浏览器缓存/临时文件
-        for pattern in ["_mcmod_debug.log", "_mcmod_captcha*", "_mcmod_browser_data*",
+        # 清理浏览器缓存/临时文件（不删 debug 日志）
+        for pattern in ["_mcmod_captcha*", "_mcmod_browser_data*",
                         "_cf_debug_*.html", "_mcmod_cookies.json"]:
             for f in Path(tempfile.gettempdir()).glob(pattern):
                 try:
@@ -3694,7 +3697,7 @@ class App:
         options.pack(fill="x")
         ttk.Checkbutton(options, text="仅试运行", variable=self.mod_dry_run_var).pack(side="left")
         ttk.Checkbutton(options, text="MC百科(需手动填验证码)", variable=self.mod_use_mcmod_var).pack(side="left", padx=(18, 0))
-        ttk.Checkbutton(options, text="CurseForge(较慢/需梯子)", variable=self.mod_use_cf_var).pack(side="left", padx=(18, 0))
+        ttk.Checkbutton(options, text="CurseForge(较慢/需梯子/测试版)", variable=self.mod_use_cf_var).pack(side="left", padx=(18, 0))
         ttk.Checkbutton(options, text="2次筛选", variable=self.mod_second_pass_var).pack(side="left", padx=(18, 0))
         ttk.Button(options, text="开始分类", command=self.start_mod_task).pack(side="right")
 
@@ -3734,7 +3737,7 @@ class App:
         options = ttk.Frame(parent, padding=(0, 12, 0, 0))
         options.pack(fill="x")
         ttk.Checkbutton(options, text="MC百科(需手动填验证码)", variable=self.server_use_mcmod_var).pack(side="left")
-        ttk.Checkbutton(options, text="CurseForge(较慢/需梯子)", variable=self.server_use_cf_var).pack(side="left", padx=(18, 0))
+        ttk.Checkbutton(options, text="CurseForge(较慢/需梯子/测试版)", variable=self.server_use_cf_var).pack(side="left", padx=(18, 0))
         ttk.Checkbutton(options, text="2次筛选", variable=self.server_second_pass_var).pack(side="left", padx=(18, 0))
         ttk.Button(options, text="开始制作服务端", command=self.start_server_task).pack(side="right")
 
