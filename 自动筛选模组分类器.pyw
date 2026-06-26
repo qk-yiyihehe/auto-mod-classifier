@@ -2080,24 +2080,28 @@ class ClassifierCore:
             html = self.mcmod_text_request(search_key, url)
             if not html:
                 continue
-            # 诊断：保存搜索页 HTML
-            if len(html) < 10000:
-                try:
-                    Path(tempfile.gettempdir(), "_cf_debug_search.html").write_text(html, encoding="utf-8")
-                    self._dlog(f"[cf] 搜索页太小({len(html)}B)，已保存 _cf_debug_search.html")
-                except Exception:
-                    pass
+            # 诊断：保存搜索页 HTML（前 5000 字符）
+            try:
+                Path(tempfile.gettempdir(), "_cf_debug_search.html").write_text(html[:10000], encoding="utf-8")
+            except Exception:
+                pass
             # 提取搜索结果中 /minecraft/mc-mods/ 的项目链接
             seen = set()
             links: List[Tuple[str, str]] = []
-            for href, raw in re.findall(r'<a[^>]+href="(/minecraft/mc-mods/[^"]+)"[^>]*>(.*?)</a>', html, re.I | re.S):
-                if "/download" in href or "/relations" in href or "/comments" in href:
-                    continue
-                title = re.sub(r"<.*?>", "", raw).strip()
-                title = re.sub(r"\s+", " ", title)
-                if href not in seen and title:
-                    seen.add(href)
-                    links.append((title, "https://www.curseforge.com" + href))
+            # 多种链接格式
+            for pattern in [
+                r'<a[^>]+href="(/minecraft/mc-mods/[^"?]+)"[^>]*>(.*?)</a>',
+                r'href="(/minecraft/mc-mods/[^"?]+)"[^>]*>([^<]+)<',
+            ]:
+                for href, raw in re.findall(pattern, html, re.I | re.S):
+                    if "/download" in href or "/relations" in href or "/comments" in href or "/files" in href:
+                        continue
+                    title = re.sub(r"<.*?>", "", raw).strip()
+                    title = re.sub(r"\s+", " ", title)
+                    if href not in seen and title and title != "Download" and title != "Relations" and title != "Comments":
+                        seen.add(href)
+                        links.append((title, "https://www.curseforge.com" + href))
+            self._dlog(f"[cf] 搜索 {query}: 找到 {len(links)} 个链接从 {len(html)}B")
             for title, link in links[:3]:
                 page_key = f"cf-page::{link}"
                 page_html = self.mcmod_text_request(page_key, link, max_attempts=3)
