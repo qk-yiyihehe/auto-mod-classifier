@@ -55,6 +55,7 @@ DEFAULT_SERVER_TIMEOUT_SECONDS = 90
 DEFAULT_INSTALL_TIMEOUT_SECONDS = 900
 DEFAULT_CLASSIFICATION_WORKERS = 10
 DEFAULT_MCMOD_WORKERS = 3
+DEFAULT_CF_WORKERS = 5
 LOADER_SEARCH_TOKENS = {
     "fabric",
     "quilt",
@@ -320,6 +321,7 @@ def classify_jars_parallel(
     classifier: "ClassifierCore",
     jar_files: Sequence[Path],
     use_mcmod: bool,
+    use_curseforge: bool = False,
     progress_callback: Optional[Callable[[int, int, Path], None]] = None,
     result_callback: Optional[Callable[[int, int, Path, Dict[str, Any]], None]] = None,
 ) -> List[Dict[str, Any]]:
@@ -329,6 +331,7 @@ def classify_jars_parallel(
 
     worker_count = get_classification_worker_count(total)
     mcmod_worker_count = get_mcmod_worker_count(total)
+    cf_worker_count = min(DEFAULT_CF_WORKERS, max(1, total // 2))
     results: List[Optional[Dict[str, Any]]] = [None] * total
     completed = 0
     done_event = threading.Event()
@@ -337,6 +340,8 @@ def classify_jars_parallel(
     active_modrinth = 0
     active_mcmod = 0
     pending_mcmod = 0
+    active_cf = 0
+    pending_cf = 0
 
     def finish_row(index: int, jar: Path, row: Dict[str, Any]) -> None:
         nonlocal completed
@@ -391,6 +396,53 @@ def classify_jars_parallel(
             active_mcmod -= 1
             remote_lock.notify_all()
 
+    def reserve_cf_capacity() -> None:
+        if not use_curseforge:
+            return
+        nonlocal pending_cf
+        with remote_lock:
+            pending_cf += 1
+            remote_lock.notify_all()
+
+    def acquire_cf_slot() -> None:
+        nonlocal active_cf, pending_cf
+        with remote_lock:
+            while active_cf >= cf_worker_count or active_modrinth + active_mcmod + active_cf >= worker_count + mcmod_worker_count + cf_worker_count:
+                remote_lock.wait()
+            pending_cf -= 1
+            active_cf += 1
+
+    def release_cf_slot() -> None:
+        nonlocal active_cf
+        with remote_lock:
+            active_cf -= 1
+            remote_lock.notify_all()
+
+    def run_cf(
+        index: int,
+        jar: Path,
+        meta: ModMeta,
+        local: Classification,
+        remote: Optional[Classification],
+        mcmod_fallback: Optional[Classification],
+    ) -> None:
+        try:
+            acquire_cf_slot()
+            try:
+                fallback = classifier.curseforge_search(meta)
+            finally:
+                release_cf_slot()
+            if fallback and fallback.category != "unknown":
+                finish_classification(index, jar, meta, fallback)
+            elif mcmod_fallback and mcmod_fallback.category != "unknown":
+                finish_classification(index, jar, meta, mcmod_fallback)
+            elif remote:
+                finish_classification(index, jar, meta, remote)
+            else:
+                finish_classification(index, jar, meta, local)
+        except Exception as exc:
+            finish_row(index, jar, build_mod_error_row(jar, str(exc)))
+
     def run_mcmod(
         index: int,
         jar: Path,
@@ -407,22 +459,10 @@ def classify_jars_parallel(
 
             if fallback and fallback.category != "unknown":
                 finish_classification(index, jar, meta, fallback)
-            # CurseForge 兜底（第三优先）
-            elif getattr(classifier, 'use_curseforge', False):
-                try:
-                    acquire_mcmod_slot()
-                    try:
-                        fallback = classifier.curseforge_search(meta)
-                    finally:
-                        release_mcmod_slot()
-                except Exception:
-                    fallback = None
-                if fallback and fallback.category != "unknown":
-                    finish_classification(index, jar, meta, fallback)
-                elif remote:
-                    finish_classification(index, jar, meta, remote)
-                else:
-                    finish_classification(index, jar, meta, local)
+            elif use_curseforge:
+                assert cf_executor is not None
+                reserve_cf_capacity()
+                cf_executor.submit(run_cf, index, jar, meta, local, remote, fallback)
             elif remote:
                 finish_classification(index, jar, meta, remote)
             else:
@@ -444,6 +484,10 @@ def classify_jars_parallel(
                 assert mcmod_executor is not None
                 reserve_mcmod_capacity()
                 mcmod_executor.submit(run_mcmod, index, jar, meta, local, remote)
+            elif use_curseforge:
+                assert cf_executor is not None
+                reserve_cf_capacity()
+                cf_executor.submit(run_cf, index, jar, meta, local, remote, None)
             elif remote:
                 finish_classification(index, jar, meta, remote)
             else:
@@ -467,6 +511,9 @@ def classify_jars_parallel(
     mcmod_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
     if use_mcmod:
         mcmod_executor = concurrent.futures.ThreadPoolExecutor(max_workers=mcmod_worker_count)
+    cf_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
+    if use_curseforge:
+        cf_executor = concurrent.futures.ThreadPoolExecutor(max_workers=cf_worker_count)
 
     try:
         for index, jar in enumerate(jar_files):
@@ -477,6 +524,8 @@ def classify_jars_parallel(
         modrinth_executor.shutdown(wait=True, cancel_futures=False)
         if mcmod_executor is not None:
             mcmod_executor.shutdown(wait=True, cancel_futures=False)
+        if cf_executor is not None:
+            cf_executor.shutdown(wait=True, cancel_futures=False)
 
     return [row for row in results if row is not None]
 
@@ -502,6 +551,7 @@ def rerun_unknown_classifications(
         retry_classifier,
         [row["Path"] for row in unknown_rows],
         use_mcmod,
+        use_curseforge,
         progress_callback=progress_callback,
         result_callback=result_callback,
     )
@@ -650,7 +700,7 @@ class ClassifierCore:
                     co.set_argument("--window-size=800,600")
                     main = ChromiumPage(co)
                     tabs = [(main, False)]
-                    for _ in range(DEFAULT_MCMOD_WORKERS - 1):
+                    for _ in range(DEFAULT_MCMOD_WORKERS + DEFAULT_CF_WORKERS - 1):
                         try:
                             tabs.append((main.new_tab(), False))
                         except Exception:
@@ -2814,6 +2864,7 @@ class ServerBuilderCore:
             self.classifier,
             jar_files,
             self.use_mcmod,
+            getattr(self.classifier, 'use_curseforge', False),
             progress_callback=first_pass_progress,
             result_callback=first_pass_result,
         )
@@ -3910,6 +3961,7 @@ class App:
                 classifier,
                 jar_files,
                 use_mcmod,
+                use_curseforge,
                 progress_callback=first_pass_progress,
                 result_callback=first_pass_result,
             )
