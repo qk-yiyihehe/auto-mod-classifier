@@ -590,8 +590,6 @@ class ClassifierCore:
         self._captcha_done.set()
         # CurseForge 开关
         self.use_curseforge: bool = False
-        # 全局限流状态
-        self._mcmod_global_rate_limited = False
         # 调试日志
         self._dlog_file = Path(tempfile.gettempdir()) / "_mcmod_debug.log"
         try:
@@ -606,10 +604,6 @@ class ClassifierCore:
                 f.write(f"[{time.strftime('%H:%M:%S')}] {msg}\n")
         except Exception:
             pass
-
-    def _init_mcmod_session(self):
-        pass  # 已全切到浏览器，curl_cffi/cloudscraper 不再需要
-
     # ---- 页面判断 ----
     def _is_captcha_page(self, html: str) -> bool:
         """检测 mc百科验证码 或 CloudFlare 拦截页面"""
@@ -4054,6 +4048,11 @@ class App:
             )
         except Exception:
             self.emit("mod", "error", traceback.format_exc())
+        finally:
+            try:
+                classifier.close_browser()
+            except Exception:
+                pass
 
     def run_server_task(self, client_dir: Path, output_dir: Path, use_mcmod: bool, use_curseforge: bool, enable_second_pass: bool) -> None:
         try:
@@ -4105,6 +4104,7 @@ class App:
                 except Exception:
                     pass
             # 清理浏览器
+        finally:
             try:
                 classifier.close_browser()
             except Exception:
