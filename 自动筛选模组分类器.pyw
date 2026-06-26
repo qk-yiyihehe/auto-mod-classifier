@@ -36,8 +36,8 @@ from tkinter import filedialog, messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
 
 
-APP_TITLE = "自动筛选模组分类器 2.00"
-USER_AGENT = "AutoModClassifier/2.00 (+Codex)"
+APP_TITLE = "自动筛选模组分类器 2.01"
+USER_AGENT = "AutoModClassifier/2.01 (+Codex)"
 SYSTEM_ENCODING = locale.getpreferredencoding(False) or "utf-8"
 SUBPROCESS_CREATIONFLAGS = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 TOOL_DIR_NAME = "_自动筛选模组分类器"

@@ -7,7 +7,7 @@ REM Use this script with "/nopause" for automation.
 set "SCRIPT_DIR=%~dp0"
 set "APP_NAME="
 set "EXE_NAME="
-set "RELEASE_EXE_NAME=auto-mod-classifier-2.00.exe"
+set "RELEASE_EXE_NAME=auto-mod-classifier-2.01.exe"
 set "ICON_FILE="
 set "ENTRY_FILE="
 set "NO_PAUSE="
