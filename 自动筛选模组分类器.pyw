@@ -21,12 +21,6 @@ import xml.etree.ElementTree as ET
 import zipfile
 
 try:
-    from curl_cffi import requests as curl_requests
-    HAS_CURL_CFFI = True
-except ImportError:
-    HAS_CURL_CFFI = False
-import cloudscraper
-try:
     from DrissionPage import ChromiumPage, ChromiumOptions
     HAS_DRISSIONPAGE = True
 except ImportError:
@@ -584,10 +578,7 @@ class ClassifierCore:
         self.modrinth_request_lock = threading.Lock()
         self.next_modrinth_request_at = 0.0
 
-        # --- mcmod 反 CloudFlare：curl_cffi + DrissionPage 浏览器 ---
-        self._mcmod_session = None
-        self._mcmod_cookie_file = Path(tempfile.gettempdir()) / "_mcmod_cookies.json"
-        self._init_mcmod_session()
+        # --- mcmod 反 CloudFlare：DrissionPage 浏览器 ---
         # 浏览器标签页池（3 标签页 = 3 并发，延迟初始化）
         self._browser_tabs: list = []
         self._browser_main_page = None
@@ -616,54 +607,8 @@ class ClassifierCore:
         except Exception:
             pass
 
-    # ---- curl_cffi 会话 ----
     def _init_mcmod_session(self):
-        try:
-            if HAS_CURL_CFFI:
-                s = curl_requests.Session()
-                for target in ("chrome131", "chrome124"):
-                    try:
-                        s.impersonate = target
-                        break
-                    except Exception:
-                        continue
-                s.headers.update({
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-                    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-                    "Accept-Encoding": "gzip, deflate, br",
-                    "Sec-Ch-Ua": '"Chromium";v="131", "Not_A Brand";v="24"',
-                    "Sec-Ch-Ua-Mobile": "?0",
-                    "Sec-Ch-Ua-Platform": '"Windows"',
-                    "Sec-Fetch-Dest": "document",
-                    "Sec-Fetch-Mode": "navigate",
-                    "Sec-Fetch-Site": "none",
-                    "Upgrade-Insecure-Requests": "1",
-                })
-            else:
-                s = cloudscraper.create_scraper(browser={"browser": "chrome", "platform": "windows", "mobile": False})
-            self._mcmod_session = s
-            if self._mcmod_cookie_file.exists():
-                try:
-                    with open(self._mcmod_cookie_file, "r", encoding="utf-8") as f:
-                        cookies = json.load(f)
-                    for k, v in cookies.items():
-                        s.cookies.set(k, v)
-                except Exception:
-                    pass
-        except Exception:
-            self._mcmod_session = None
-
-    def _save_mcmod_cookies(self):
-        s = self._mcmod_session
-        if not s:
-            return
-        try:
-            c = s.cookies.get_dict()
-            if c:
-                with open(self._mcmod_cookie_file, "w", encoding="utf-8") as f:
-                    json.dump(c, f, ensure_ascii=False, indent=2)
-        except Exception:
-            pass
+        pass  # 已全切到浏览器，curl_cffi/cloudscraper 不再需要
 
     # ---- 页面判断 ----
     def _is_captcha_page(self, html: str) -> bool:
