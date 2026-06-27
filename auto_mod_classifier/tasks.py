@@ -10,6 +10,7 @@ def _build_scan_request(options: ModTaskOptions) -> ScanModsRequest:
 
     return ScanModsRequest(
         source_path=options.mods_path,
+        download_source=options.download_source,
         dry_run=options.dry_run,
         use_mcmod=options.use_mcmod,
         use_curseforge=options.use_curseforge,
@@ -23,6 +24,7 @@ def _build_server_request(options: ServerTaskOptions) -> BuildServerRequest:
     return BuildServerRequest(
         source_path=options.client_dir,
         output_dir=options.output_dir,
+        download_source=options.download_source,
         use_mcmod=options.use_mcmod,
         use_curseforge=options.use_curseforge,
         enable_second_pass=options.enable_second_pass,

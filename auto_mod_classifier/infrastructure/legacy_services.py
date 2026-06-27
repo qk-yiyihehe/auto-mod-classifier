@@ -124,6 +124,13 @@ class LegacyModScanService:
             json_path.write_text(json.dumps(output_rows, ensure_ascii=False, indent=2), encoding="utf-8")
             write_csv_with_labels(csv_path, output_rows)
 
+            if source.metadata.get("export_all_categories"):
+                exported_root = result_root / "服务端保留_原样导出"
+                exported_root.mkdir(parents=True, exist_ok=True)
+                for jar_path in jar_files:
+                    if jar_path.exists():
+                        shutil.copy2(jar_path, exported_root / jar_path.name)
+
             server_keep = sum(1 for item in output_rows if item["Category"] == "server-keep")
             client_only = sum(1 for item in output_rows if item["Category"] == "client-only")
             unknown = sum(1 for item in output_rows if item["Category"] == "unknown")
@@ -189,6 +196,7 @@ class LegacyServerBuildService:
                 request_checklist=request_checklist,
                 use_mcmod=request.use_mcmod,
                 enable_second_pass=request.enable_second_pass,
+                prepared_version_candidates=source.version_candidates,
             )
             result = builder.build_server(source.client_dir, request.output_dir)
             summary = "\n".join(

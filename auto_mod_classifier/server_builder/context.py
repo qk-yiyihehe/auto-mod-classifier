@@ -17,6 +17,7 @@ class ServerBuilderRuntime:
     request_checklist: Callable[[str, str, List[ReviewItem]], Optional[List[str]]]
     use_mcmod: bool
     enable_second_pass: bool
+    prepared_version_candidates: List[VersionCandidate] = field(default_factory=list)
     # 下面这些是多个服务会共用的运行期状态，所以集中放在这里。
     network_cache: Dict[str, Any] = field(default_factory=dict)
     build_log_lines: List[str] = field(default_factory=list)

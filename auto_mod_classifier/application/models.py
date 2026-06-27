@@ -17,6 +17,7 @@ class ScanModsRequest:
     """模组筛选任务的统一入参。"""
 
     source_path: Path
+    download_source: str
     dry_run: bool
     use_mcmod: bool
     use_curseforge: bool
@@ -29,6 +30,7 @@ class BuildServerRequest:
 
     source_path: Path
     output_dir: Path
+    download_source: str
     use_mcmod: bool
     use_curseforge: bool
     enable_second_pass: bool
@@ -63,3 +65,4 @@ class PreparedServerSource(PreparedSource):
     """一键开服阶段真正会用到的输入信息。"""
 
     client_dir: Path = field(default_factory=lambda: Path("."))
+    version_candidates: list[Any] = field(default_factory=list)

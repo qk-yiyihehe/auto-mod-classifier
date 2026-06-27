@@ -10,20 +10,20 @@ class SourceImporter(Protocol):
     def supports(self, source_path: Path) -> bool:
         ...
 
-    def prepare_mod_scan(self, request: ScanModsRequest) -> PreparedModScanSource:
+    def prepare_mod_scan(self, request: ScanModsRequest, emit: TaskEmitter) -> PreparedModScanSource:
         ...
 
-    def prepare_server_build(self, request: BuildServerRequest) -> PreparedServerSource:
+    def prepare_server_build(self, request: BuildServerRequest, emit: TaskEmitter) -> PreparedServerSource:
         ...
 
 
 class SourceImporterRegistry(Protocol):
     """输入源选择器接口。"""
 
-    def prepare_mod_scan(self, request: ScanModsRequest) -> PreparedModScanSource:
+    def prepare_mod_scan(self, request: ScanModsRequest, emit: TaskEmitter) -> PreparedModScanSource:
         ...
 
-    def prepare_server_build(self, request: BuildServerRequest) -> PreparedServerSource:
+    def prepare_server_build(self, request: BuildServerRequest, emit: TaskEmitter) -> PreparedServerSource:
         ...
 
 

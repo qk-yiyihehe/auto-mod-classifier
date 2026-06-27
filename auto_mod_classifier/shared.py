@@ -43,6 +43,9 @@ MOD_REPORT_BASENAME = "模组筛选报告"
 CONFIG_COPY_SUMMARY_NAME = "目录复制摘要.json"
 BUILD_LOG_NAME = "制作日志.txt"
 INSTALL_LOG_NAME = "安装阶段日志.txt"
+IMPORT_CACHE_DIR_NAME = "_auto_mod_classifier_import_cache"
+DOWNLOAD_SOURCE_OFFICIAL = "official"
+DOWNLOAD_SOURCE_DOMESTIC = "domestic"
 DEFAULT_SERVER_TIMEOUT_SECONDS = 90
 DEFAULT_INSTALL_TIMEOUT_SECONDS = 900
 DEFAULT_CLASSIFICATION_WORKERS = 10
@@ -258,6 +261,7 @@ class ModTaskOptions:
     """Mod 筛选任务的固定入参。"""
 
     mods_path: Path
+    download_source: str
     dry_run: bool
     use_mcmod: bool
     use_curseforge: bool
@@ -270,6 +274,7 @@ class ServerTaskOptions:
 
     client_dir: Path
     output_dir: Path
+    download_source: str
     use_mcmod: bool
     use_curseforge: bool
     enable_second_pass: bool

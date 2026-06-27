@@ -148,6 +148,17 @@ class ServerVersionService:
         return candidates
 
     def find_version_candidates(self, game_root: Path) -> List[VersionCandidate]:
+        prepared_candidates = list(self.runtime.prepared_version_candidates or [])
+        if prepared_candidates:
+            unique: Dict[Tuple[str, str, str, str], VersionCandidate] = {}
+            for candidate in prepared_candidates:
+                key = (candidate.version_id, candidate.minecraft_version, candidate.loader, candidate.loader_version)
+                unique[key] = candidate
+            final_candidates = sorted(unique.values(), key=self.common.version_candidate_sort_key)
+            if final_candidates:
+                self.common.log_line(f"已使用导入清单预解析出的 {len(final_candidates)} 个版本候选。")
+                return final_candidates
+
         candidates = self.find_root_level_version_candidates(game_root)
         versions_dir = game_root / "versions"
         if versions_dir.is_dir():
