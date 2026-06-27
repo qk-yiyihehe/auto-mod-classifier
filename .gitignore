@@ -6,7 +6,6 @@
 !自动筛选模组分类器.pyw
 !auto_mod_classifier/
 !auto_mod_classifier/**
-!模块功能说明-自然语言版.md
 !.gitignore
 __pycache__/
 *.pyc
