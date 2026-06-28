@@ -1,8 +1,8 @@
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from ..classifier import classify_jars_parallel, rerun_unknown_classifications
-from ..download_support import DownloadStatsReporter
+from ..download_support import DownloadStatsReporter, build_idle_download_status_text
 from ..shared import *
 from .common import ServerBuilderCommonService
 from .context import ServerBuilderRuntime
@@ -588,7 +588,14 @@ class ServerInstallService:
         self.runtime = runtime
         self.common = common
 
-    def run_process_capture(self, args: Sequence[str], cwd: Path, timeout_seconds: int, install_log_only: bool = False) -> Tuple[int, List[str]]:
+    def run_process_capture(
+        self,
+        args: Sequence[str],
+        cwd: Path,
+        timeout_seconds: int,
+        install_log_only: bool = False,
+        line_callback: Optional[Callable[[str], None]] = None,
+    ) -> Tuple[int, List[str]]:
         lines: List[str] = []
         display = " ".join(str(item) for item in args)
         self.common.log_line(f"执行命令：{display}")
@@ -630,6 +637,11 @@ class ServerInstallService:
             else:
                 lines.append(item)
                 self.runtime.install_log_lines.append(item)
+                if line_callback is not None:
+                    try:
+                        line_callback(item)
+                    except Exception:
+                        pass
                 if not install_log_only:
                     self.common.log_line(item)
             if process.poll() is not None and stream_closed and stream_queue.empty():
@@ -675,7 +687,29 @@ class ServerInstallService:
             ]
         else:
             args = [str(java_runtime.path), "-jar", str(installer_path), "--installServer", str(output_root)]
-        code, _ = self.run_process_capture(args, output_root, DEFAULT_INSTALL_TIMEOUT_SECONDS)
+        install_step = 0
+
+        def update_install_download_status(line: str) -> None:
+            nonlocal install_step
+            text = line.strip()
+            if not text:
+                return
+            lowered = text.lower()
+            if "下载" not in text and "download" not in lowered:
+                return
+            install_step += 1
+            self.runtime.set_download_status(f"安装器内部下载 [{install_step}]：{text}")
+
+        self.runtime.set_download_status("安装器已启动，正在准备下载服务端环境…")
+        try:
+            code, _ = self.run_process_capture(
+                args,
+                output_root,
+                DEFAULT_INSTALL_TIMEOUT_SECONDS,
+                line_callback=update_install_download_status,
+            )
+        finally:
+            self.runtime.set_download_status(build_idle_download_status_text())
         if code != 0:
             raise RuntimeError("服务端安装器执行失败。")
 
@@ -931,6 +965,10 @@ class ServerLaunchService:
             launch_target = launch_script.relative_to(output_root).as_posix().replace("/", "\\")
         except ValueError:
             launch_target = str(launch_script)
+        if not re.match(r"^[A-Za-z]:\\", launch_target) and not launch_target.startswith(".\\"):
+            launch_target = f".\\{launch_target}"
+        self.common.log_line(f"准备执行{('首次启动' if mode == 'init' else '验证启动')}脚本：{launch_target}")
+        self.common.log_line(f"启动目录：{output_root}")
         process = subprocess.Popen(
             ["cmd.exe", "/c", launch_target],
             cwd=str(output_root),
@@ -940,7 +978,6 @@ class ServerLaunchService:
             text=True,
             encoding=SYSTEM_ENCODING,
             errors="replace",
-            creationflags=SUBPROCESS_CREATIONFLAGS,
         )
 
         line_queue: "queue.Queue[Optional[str]]" = queue.Queue()
@@ -1004,10 +1041,15 @@ class ServerLaunchService:
 
         if mode == "init":
             if not eula_path.exists() and not properties_path.exists():
+                self.common.log_line("首次启动结束，但未检测到 eula.txt 或 server.properties。")
                 raise RuntimeError("首次启动后未生成 eula.txt 或 server.properties。")
+            self.common.log_line(
+                f"首次启动已生成：eula={eula_path.exists()}，server.properties={properties_path.exists()}"
+            )
             return
 
         if not saw_success:
+            self.common.log_line("第二次启动结束，但没有检测到 Done/For help 启动完成标志。")
             raise RuntimeError("第二次启动未检测到服务端启动完成标志。")
 
 
