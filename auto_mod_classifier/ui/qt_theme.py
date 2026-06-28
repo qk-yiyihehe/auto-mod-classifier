@@ -103,11 +103,26 @@ def build_window_stylesheet() -> str:
     """主窗口全局 QSS —— 克制、精致，所有控件统一 Fluent 质感。"""
 
     return f"""
-    QWidget {{
+    * {{
         font-family: {FONT_SYSTEM};
         font-size: {FONT_SIZE_BASE}px;
         color: {TEXT_SECONDARY};
-        background-color: {BG_CONTENT};
+    }}
+
+    QMenu {{
+        background-color: #161E2E;
+        color: {TEXT_SECONDARY};
+        border: 1px solid {BORDER_STRONG};
+        border-radius: {RADIUS_MD}px;
+        padding: 4px;
+    }}
+    QMenu::item {{
+        min-height: 28px;
+        padding: 5px 24px 5px 12px;
+    }}
+    QMenu::item:selected {{
+        background-color: {ACCENT_BG_MEDIUM};
+        color: {TEXT_PRIMARY};
     }}
 
     QLabel {{
