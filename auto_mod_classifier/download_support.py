@@ -102,6 +102,9 @@ def _rewrite_to_mcim(url: str) -> str:
 
 
 def _rewrite_to_bmclapi(url: str) -> str:
+    if "/net/fabricmc/fabric-installer/" in url:
+        # BMCLAPI 当前没有同步这条安装器路径，直接跳过可以避免稳定 404。
+        return url
     replacements = (
         ("https://meta.fabricmc.net/", "https://bmclapi2.bangbang93.com/fabric-meta/"),
         ("https://maven.fabricmc.net/", "https://bmclapi2.bangbang93.com/maven/"),

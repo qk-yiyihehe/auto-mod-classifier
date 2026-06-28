@@ -317,6 +317,7 @@ class MrpackSourceImporter:
             temp_name = hashlib.sha1(relative_path.encode("utf-8")).hexdigest()[:16] + "_" + Path(relative_path).name
             temp_download = downloads_root / temp_name
             try:
+                _emit(emit, "log", f"[开始下载] {relative_path}")
                 http_download(
                     download_urls,
                     temp_download,
@@ -326,6 +327,7 @@ class MrpackSourceImporter:
                     log_callback=lambda message: _emit(emit, "log", message),
                     log_success=False,
                 )
+                _emit(emit, "log", f"[开始校验] {relative_path}")
                 _verify_download_hash(temp_download, item.get("hashes") or {})
                 shutil.move(str(temp_download), str(target_path))
                 _emit(emit, "log", f"[下载成功] {relative_path}")
@@ -499,6 +501,7 @@ class ZipModpackSourceImporter:
 
                 destination = mods_dir / file_name
                 try:
+                    _emit(emit, "log", f"[开始下载] {file_name}")
                     http_download(
                         download_url,
                         destination,

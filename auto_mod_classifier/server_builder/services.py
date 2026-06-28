@@ -961,96 +961,119 @@ class ServerLaunchService:
             subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], capture_output=True, creationflags=SUBPROCESS_CREATIONFLAGS)
 
     def run_server_script(self, output_root: Path, launch_script: Path, mode: str) -> None:
-        try:
-            launch_target = launch_script.relative_to(output_root).as_posix().replace("/", "\\")
-        except ValueError:
-            launch_target = str(launch_script)
-        if not re.match(r"^[A-Za-z]:\\", launch_target) and not launch_target.startswith(".\\"):
-            launch_target = f".\\{launch_target}"
-        self.common.log_line(f"准备执行{('首次启动' if mode == 'init' else '验证启动')}脚本：{launch_target}")
+        launch_path = launch_script.resolve()
+        if not launch_path.exists():
+            raise RuntimeError(f"启动脚本不存在：{launch_path}")
+
+        self.common.log_line(f"准备执行{('首次启动' if mode == 'init' else '验证启动')}脚本：{launch_path}")
         self.common.log_line(f"启动目录：{output_root}")
-        process = subprocess.Popen(
-            ["cmd.exe", "/c", launch_target],
-            cwd=str(output_root),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            stdin=subprocess.PIPE,
-            text=True,
-            encoding=SYSTEM_ENCODING,
-            errors="replace",
-        )
-
-        line_queue: "queue.Queue[Optional[str]]" = queue.Queue()
-
-        def reader() -> None:
-            assert process.stdout is not None
-            for line in process.stdout:
-                line_queue.put(line.rstrip("\r\n"))
-            line_queue.put(None)
-
-        threading.Thread(target=reader, daemon=True).start()
-        deadline = time.time() + DEFAULT_SERVER_TIMEOUT_SECONDS
         eula_path = output_root / "eula.txt"
         properties_path = output_root / "server.properties"
-        saw_success = False
-        stream_closed = False
-        generated_at: Optional[float] = None
+        last_path_error = False
 
-        while True:
-            try:
-                item = line_queue.get(timeout=0.2)
-            except queue.Empty:
-                item = ""
+        for attempt_index in range(2):
+            if attempt_index > 0:
+                self.common.log_line("检测到批处理启动阶段疑似路径异常，1 秒后重试一次。")
+                time.sleep(1)
 
-            if item == "":
-                pass
-            elif item is None:
-                if not stream_closed and process.poll() is not None:
-                    stream_closed = True
-            else:
-                self.runtime.install_log_lines.append(item)
-                self.common.log_line(item)
-                if "Done (" in item or "For help, type" in item:
-                    saw_success = True
-                    if mode == "verify":
-                        self.stop_process(process)
+            process = subprocess.Popen(
+                ["cmd.exe", "/d", "/c", "call", str(launch_path)],
+                cwd=str(output_root),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.PIPE,
+                text=True,
+                encoding=SYSTEM_ENCODING,
+                errors="replace",
+            )
 
-            if mode == "init":
-                if process.poll() is not None:
+            line_queue: "queue.Queue[Optional[str]]" = queue.Queue()
+
+            def reader() -> None:
+                assert process.stdout is not None
+                for line in process.stdout:
+                    line_queue.put(line.rstrip("\r\n"))
+                line_queue.put(None)
+
+            threading.Thread(target=reader, daemon=True).start()
+            deadline = time.time() + DEFAULT_SERVER_TIMEOUT_SECONDS
+            saw_success = False
+            stream_closed = False
+            generated_at: Optional[float] = None
+            path_error_detected = False
+
+            while True:
+                try:
+                    item = line_queue.get(timeout=0.2)
+                except queue.Empty:
+                    item = ""
+
+                if item == "":
+                    pass
+                elif item is None:
+                    if not stream_closed and process.poll() is not None:
+                        stream_closed = True
+                else:
+                    self.runtime.install_log_lines.append(item)
+                    self.common.log_line(item)
+                    if "Done (" in item or "For help, type" in item:
+                        saw_success = True
+                        if mode == "verify":
+                            self.stop_process(process)
+                    if "系统找不到指定的路径" in item or "The system cannot find the path specified." in item:
+                        path_error_detected = True
+
+                if mode == "init":
+                    if process.poll() is not None:
+                        break
+                    if eula_path.exists() or properties_path.exists():
+                        if generated_at is None:
+                            generated_at = time.time()
+                            self.common.log_line("检测到服务端已生成初始化配置，准备优雅结束首次启动。")
+                        if time.time() - generated_at >= 5:
+                            self.stop_process(process)
+                            break
+
+                if mode == "verify" and saw_success and process.poll() is not None:
                     break
-                if eula_path.exists() or properties_path.exists():
-                    if generated_at is None:
-                        generated_at = time.time()
-                        self.common.log_line("检测到服务端已生成初始化配置，准备优雅结束首次启动。")
-                    if time.time() - generated_at >= 5:
+
+                if process.poll() is not None and stream_closed and line_queue.empty():
+                    break
+
+                if time.time() > deadline:
+                    if mode == "verify" and saw_success:
                         self.stop_process(process)
                         break
+                    subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], capture_output=True, creationflags=SUBPROCESS_CREATIONFLAGS)
+                    raise RuntimeError(f"服务端{('首次启动' if mode == 'init' else '验证启动')}超过 {DEFAULT_SERVER_TIMEOUT_SECONDS} 秒仍未完成。")
 
-            if mode == "verify" and saw_success and process.poll() is not None:
-                break
-
-            if process.poll() is not None and stream_closed and line_queue.empty():
-                break
-
-            if time.time() > deadline:
-                if mode == "verify" and saw_success:
-                    self.stop_process(process)
-                    break
-                subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], capture_output=True, creationflags=SUBPROCESS_CREATIONFLAGS)
-                raise RuntimeError(f"服务端{('首次启动' if mode == 'init' else '验证启动')}超过 {DEFAULT_SERVER_TIMEOUT_SECONDS} 秒仍未完成。")
-
-        if mode == "init":
-            if not eula_path.exists() and not properties_path.exists():
+            if mode == "init":
+                if eula_path.exists() or properties_path.exists():
+                    self.common.log_line(
+                        f"首次启动已生成：eula={eula_path.exists()}，server.properties={properties_path.exists()}"
+                    )
+                    return
+                last_path_error = path_error_detected
+                if path_error_detected and attempt_index == 0:
+                    continue
                 self.common.log_line("首次启动结束，但未检测到 eula.txt 或 server.properties。")
                 raise RuntimeError("首次启动后未生成 eula.txt 或 server.properties。")
-            self.common.log_line(
-                f"首次启动已生成：eula={eula_path.exists()}，server.properties={properties_path.exists()}"
-            )
-            return
 
-        if not saw_success:
+            if saw_success:
+                return
+            last_path_error = path_error_detected
+            if path_error_detected and attempt_index == 0:
+                continue
             self.common.log_line("第二次启动结束，但没有检测到 Done/For help 启动完成标志。")
             raise RuntimeError("第二次启动未检测到服务端启动完成标志。")
+
+        if mode == "init":
+            if last_path_error:
+                self.common.log_line("重试后仍然出现批处理路径错误。")
+            raise RuntimeError("首次启动后未生成 eula.txt 或 server.properties。")
+        if last_path_error:
+            self.common.log_line("重试后仍然出现批处理路径错误。")
+        raise RuntimeError("第二次启动未检测到服务端启动完成标志。")
 
 
 class ServerReportingService:
