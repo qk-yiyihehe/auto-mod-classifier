@@ -131,7 +131,7 @@ class QtPageFactory:
         card = QFrame(self.app)
         apply_card_style(card, variant)
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(SPACING_LG, SPACING_MD + 2, SPACING_LG, SPACING_MD + 2)
+        layout.setContentsMargins(SPACING_MD + 2, SPACING_SM + 2, SPACING_MD + 2, SPACING_SM + 2)
         layout.setSpacing(SPACING_SM)
 
         title_label = StrongBodyLabel(title, card)
@@ -208,7 +208,7 @@ class QtPageFactory:
         workspace = QWidget(page)
         workspace_layout = QHBoxLayout(workspace)
         workspace_layout.setContentsMargins(0, 0, 0, 0)
-        workspace_layout.setSpacing(SPACING_LG)
+        workspace_layout.setSpacing(SPACING_MD)
 
         left_column = QWidget(workspace)
         left_column.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -271,7 +271,7 @@ class QtPageFactory:
 
         # 下行：下载状态 + 输出位置
         info_row = QHBoxLayout()
-        info_row.setSpacing(SPACING_LG)
+        info_row.setSpacing(SPACING_MD)
         dl = BodyLabel(build_idle_download_status_text(), card)
         dl.setWordWrap(True)
         apply_label_tone(dl, muted=True, size=FONT_SIZE_XS)
@@ -368,7 +368,7 @@ class QtPageFactory:
         quick_host = QWidget(page)
         action_row = QHBoxLayout()
         action_row.setContentsMargins(0, 0, 0, 0)
-        action_row.setSpacing(SPACING_LG)
+        action_row.setSpacing(SPACING_MD)
         quick_host.setLayout(action_row)
 
         mod_action = ActionCard(
@@ -420,7 +420,7 @@ class QtPageFactory:
 
         # 模组状态卡片
         mod_card, mod_gl = self._create_card("模组筛选")
-        mod_gl.setContentsMargins(SPACING_LG, SPACING_MD + 2, SPACING_LG, SPACING_MD + 2)
+        mod_gl.setContentsMargins(SPACING_MD + 2, SPACING_SM + 2, SPACING_MD + 2, SPACING_SM + 2)
         mod_status_dot = StatusDot(mod_card)
         mod_status_label = StrongBodyLabel("待运行", mod_card)
         mod_status_label.setStyleSheet(
@@ -455,7 +455,7 @@ class QtPageFactory:
 
         # 开服状态卡片
         server_card, srv_gl = self._create_card("一键开服")
-        srv_gl.setContentsMargins(SPACING_LG, SPACING_MD + 2, SPACING_LG, SPACING_MD + 2)
+        srv_gl.setContentsMargins(SPACING_MD + 2, SPACING_SM + 2, SPACING_MD + 2, SPACING_SM + 2)
         server_status_dot = StatusDot(server_card)
         server_status_label = StrongBodyLabel("待运行", server_card)
         server_status_label.setStyleSheet(
@@ -527,7 +527,7 @@ class QtPageFactory:
         # — 左侧：输入与设置 —
         src_card, src_gl = self._create_card("输入源", "选择目录或整合包文件。", variant="subtle")
         src_card.setParent(left_col)
-        src_gl.setContentsMargins(SPACING_LG, SPACING_MD + 2, SPACING_LG, SPACING_MD + 2)
+        src_gl.setContentsMargins(SPACING_MD + 2, SPACING_SM + 2, SPACING_MD + 2, SPACING_SM + 2)
         mod_path_edit = LineEdit(src_card)
         mod_path_edit.setPlaceholderText("选择目录、.mrpack 或 .zip")
         mod_path_edit.setClearButtonEnabled(True)
@@ -542,7 +542,7 @@ class QtPageFactory:
 
         opt_card, opt_gl = self._create_card("选项", variant="subtle")
         opt_card.setParent(left_col)
-        opt_gl.setContentsMargins(SPACING_LG, SPACING_MD + 2, SPACING_LG, SPACING_MD + 2)
+        opt_gl.setContentsMargins(SPACING_MD + 2, SPACING_SM + 2, SPACING_MD + 2, SPACING_SM + 2)
         dry = CheckBox("仅试运行，不移动文件", opt_card)
         opt_gl.addWidget(dry)
         stn_btn = PushButton("全局筛选规则可在设置中修改", opt_card)
@@ -654,7 +654,7 @@ class QtPageFactory:
 
         src_card, src_gl = self._create_card("客户端输入源", "选择客户端目录或整合包。", variant="subtle")
         src_card.setParent(left_col)
-        src_gl.setContentsMargins(SPACING_LG, SPACING_MD + 2, SPACING_LG, SPACING_MD + 2)
+        src_gl.setContentsMargins(SPACING_MD + 2, SPACING_SM + 2, SPACING_MD + 2, SPACING_SM + 2)
         srv_client_edit = LineEdit(src_card)
         srv_client_edit.setPlaceholderText("选择客户端目录、.mrpack 或 .zip")
         srv_client_edit.setClearButtonEnabled(True)
@@ -669,7 +669,7 @@ class QtPageFactory:
 
         out_card, out_gl = self._create_card("输出目录", "建议选择空目录。", variant="subtle")
         out_card.setParent(left_col)
-        out_gl.setContentsMargins(SPACING_LG, SPACING_MD + 2, SPACING_LG, SPACING_MD + 2)
+        out_gl.setContentsMargins(SPACING_MD + 2, SPACING_SM + 2, SPACING_MD + 2, SPACING_SM + 2)
         srv_out_edit = LineEdit(out_card)
         srv_out_edit.setPlaceholderText("选择服务端输出目录")
         srv_out_edit.setClearButtonEnabled(True)
@@ -681,7 +681,7 @@ class QtPageFactory:
 
         opt_card, opt_gl = self._create_card("选项", variant="subtle")
         opt_card.setParent(left_col)
-        opt_gl.setContentsMargins(SPACING_LG, SPACING_MD + 2, SPACING_LG, SPACING_MD + 2)
+        opt_gl.setContentsMargins(SPACING_MD + 2, SPACING_SM + 2, SPACING_MD + 2, SPACING_SM + 2)
         stn_btn = PushButton("全局开服默认设置可在设置中修改", opt_card)
         stn_btn.setObjectName("smallButton")
         stn_btn.clicked.connect(lambda: self.app.open_page(self.app.settings_page))
@@ -786,8 +786,8 @@ class QtPageFactory:
         grid = QWidget(page)
         gl = QGridLayout(grid)
         gl.setContentsMargins(0, 0, 0, 0)
-        gl.setHorizontalSpacing(SPACING_LG)
-        gl.setVerticalSpacing(SPACING_LG)
+        gl.setHorizontalSpacing(SPACING_MD)
+        gl.setVerticalSpacing(SPACING_MD)
         gl.setColumnStretch(0, 1)
         gl.setColumnStretch(1, 1)
 
@@ -916,8 +916,8 @@ class QtPageFactory:
         grid = QWidget(page)
         gl = QGridLayout(grid)
         gl.setContentsMargins(0, 0, 0, 0)
-        gl.setHorizontalSpacing(SPACING_LG)
-        gl.setVerticalSpacing(SPACING_LG)
+        gl.setHorizontalSpacing(SPACING_MD)
+        gl.setVerticalSpacing(SPACING_MD)
         gl.setColumnStretch(0, 1)
         gl.setColumnStretch(1, 1)
 

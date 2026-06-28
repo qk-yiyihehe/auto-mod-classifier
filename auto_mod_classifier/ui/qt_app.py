@@ -81,7 +81,7 @@ class App(FluentWindow):
 
     def _build_window(self) -> None:
         self.setWindowTitle(APP_TITLE)
-        self.setMinimumSize(1000, 640)
+        self.setMinimumSize(940, 560)
         self._resize_to_available_screen()
         self.setAcceptDrops(True)
         self.setMicaEffectEnabled(False)
@@ -95,8 +95,8 @@ class App(FluentWindow):
             self.resize(1120, 720)
             return
         available = screen.availableGeometry()
-        width = min(1180, max(1000, int(available.width() * 0.82)))
-        height = min(760, max(640, int(available.height() * 0.82)))
+        width = min(1100, max(940, int(available.width() * 0.72)))
+        height = min(680, max(560, int(available.height() * 0.70)))
         self.resize(width, height)
 
     def _build_pages(self) -> None:

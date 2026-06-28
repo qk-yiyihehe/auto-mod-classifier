@@ -116,8 +116,8 @@ class ScrollablePage(ScrollArea):
         inner.setObjectName(f"{page_key}Content")
         inner.setStyleSheet(f"background-color: {BG_CONTENT};")
         layout = QVBoxLayout(inner)
-        layout.setContentsMargins(SPACING_XL, SPACING_LG, SPACING_XL, SPACING_XL)
-        layout.setSpacing(SPACING_LG)
+        layout.setContentsMargins(SPACING_LG, SPACING_MD, SPACING_LG, SPACING_LG)
+        layout.setSpacing(SPACING_MD)
         self.container_layout = layout
 
         header = QWidget(inner)
@@ -156,8 +156,8 @@ class TaskPage(QWidget):
         self.setStyleSheet(f"background-color: {BG_CONTENT};")
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(SPACING_XL, SPACING_LG, SPACING_XL, SPACING_LG)
-        layout.setSpacing(SPACING_MD)
+        layout.setContentsMargins(SPACING_LG, SPACING_MD, SPACING_LG, SPACING_MD)
+        layout.setSpacing(SPACING_SM)
         self.container_layout = layout
 
         header = QWidget(self)
@@ -230,7 +230,7 @@ class MetricCard(QFrame):
         self._animations: List[QPropertyAnimation] = []
         self._accent_color = accent_color
         apply_card_style(self, "metric")
-        self.setMinimumHeight(86)
+        self.setMinimumHeight(76)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(SPACING_LG, SPACING_MD, SPACING_LG, SPACING_MD)
@@ -296,7 +296,7 @@ class StageBoard(QFrame):
         self.current_stage_key: Optional[str] = None
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(SPACING_LG, SPACING_MD + 2, SPACING_LG, SPACING_MD + 2)
+        layout.setContentsMargins(SPACING_MD + 2, SPACING_SM + 2, SPACING_MD + 2, SPACING_SM + 2)
         layout.setSpacing(SPACING_SM)
 
         lbl = StrongBodyLabel(title, self)
