@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
-from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt
+from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt, QTimer
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
     QFrame,
@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QHBoxLayout,
     QLabel,
+    QScrollArea,
     QScrollBar,
     QSizePolicy,
     QStackedWidget,
@@ -27,31 +28,55 @@ from qfluentwidgets import (
 )
 
 from .qt_theme import (
-    ACCENT_SOFT_COLOR,
+    ACCENT_BG_SOFT,
+    ACCENT_BG_MEDIUM,
     ACCENT_COLOR,
+    ACCENT_NORMAL,
     BG_COLOR,
+    BG_CONTENT,
+    BORDER_DEFAULT,
+    BORDER_STRONG,
     ERROR_COLOR,
     IDLE_COLOR,
     MUTED_TEXT_COLOR,
     RUNNING_COLOR,
     SECONDARY_TEXT_COLOR,
     SUCCESS_COLOR,
+    SURFACE_CARD,
+    SURFACE_INPUT,
     TEXT_COLOR,
+    TEXT_MUTED,
+    TEXT_PRIMARY,
+    TEXT_SECONDARY,
     WARNING_COLOR,
     WEAK_BORDER_COLOR,
     apply_card_style,
     install_shadow,
+    FONT_SIZE_XS,
+    FONT_SIZE_SM,
+    FONT_SIZE_BASE,
+    FONT_SIZE_MD,
+    FONT_SIZE_XL,
+    FONT_SIZE_XXL,
+    RADIUS_SM,
+    RADIUS_MD,
+    RADIUS_LG,
+    SPACING_SM,
+    SPACING_MD,
+    SPACING_LG,
+    SPACING_XL,
 )
 
 
 def _start_opacity_flash(widget: QWidget, owner: QWidget, store: List[QPropertyAnimation], *, start: float = 0.45) -> None:
+    """数值或状态变更时的微闪动效，轻盈不抢眼。"""
     effect = widget.graphicsEffect()
     if not isinstance(effect, QGraphicsOpacityEffect):
         effect = QGraphicsOpacityEffect(widget)
         widget.setGraphicsEffect(effect)
     effect.setOpacity(start)
     animation = QPropertyAnimation(effect, b"opacity", owner)
-    animation.setDuration(180)
+    animation.setDuration(200)
     animation.setStartValue(start)
     animation.setEndValue(1.0)
     animation.setEasingCurve(QEasingCurve.OutCubic)
@@ -66,7 +91,7 @@ def _start_opacity_flash(widget: QWidget, owner: QWidget, store: List[QPropertyA
 
 
 class ScrollablePage(ScrollArea):
-    """统一页面壳子，负责滚动和头部标题。"""
+    """设置页壳子 —— 卡片内部可滚动，不整页滚。"""
 
     def __init__(self, page_key: str, title: str, subtitle: str, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -75,74 +100,91 @@ class ScrollablePage(ScrollArea):
         self.setWidgetResizable(True)
         self.setFrameShape(QFrame.NoFrame)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.viewport().setStyleSheet(f"background-color: {BG_COLOR}; border: 0;")
+        self.viewport().setStyleSheet("background: transparent; border: 0;")
 
-        content = QWidget(self)
-        content.setObjectName(f"{page_key}Content")
-        content.setStyleSheet(f"background-color: {BG_COLOR};")
-        self.setWidget(content)
-        self.content = content
+        wrapper = QWidget(self)
+        wrapper.setObjectName(f"{page_key}Wrapper")
+        wrapper.setStyleSheet("background: transparent;")
+        self.setWidget(wrapper)
+        self.content = wrapper
 
-        layout = QVBoxLayout(content)
-        layout.setContentsMargins(20, 16, 20, 20)
-        layout.setSpacing(16)
+        outer = QVBoxLayout(wrapper)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        inner = QWidget(wrapper)
+        inner.setObjectName(f"{page_key}Content")
+        inner.setStyleSheet(f"background-color: {BG_CONTENT};")
+        layout = QVBoxLayout(inner)
+        layout.setContentsMargins(SPACING_XL, SPACING_LG, SPACING_XL, SPACING_XL)
+        layout.setSpacing(SPACING_LG)
         self.container_layout = layout
 
-        header = QWidget(content)
+        header = QWidget(inner)
         header_layout = QVBoxLayout(header)
         header_layout.setContentsMargins(0, 0, 0, 0)
-        header_layout.setSpacing(4)
+        header_layout.setSpacing(2)
 
         title_label = TitleLabel(title, header)
         subtitle_label = BodyLabel(subtitle, header)
         subtitle_label.setWordWrap(True)
-        title_label.setStyleSheet(f"color: {TEXT_COLOR}; background: transparent; font-size: 20px; font-weight: 600;")
-        subtitle_label.setStyleSheet(f"color: {MUTED_TEXT_COLOR}; background: transparent; font-size: 12px;")
+        title_label.setStyleSheet(
+            f"color: {TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_XL}px; font-weight: 600;"
+        )
+        subtitle_label.setStyleSheet(
+            f"color: {TEXT_MUTED}; background: transparent; font-size: {FONT_SIZE_XS}px;"
+        )
         header_layout.addWidget(title_label)
         header_layout.addWidget(subtitle_label)
         layout.addWidget(header)
 
+        outer.addWidget(inner)
+
     def scroll_to_top(self) -> None:
-        scrollbar = self.verticalScrollBar()
-        if isinstance(scrollbar, QScrollBar):
-            scrollbar.setValue(0)
+        bar = self.verticalScrollBar()
+        if isinstance(bar, QScrollBar):
+            bar.setValue(0)
 
 
 class TaskPage(QWidget):
-    """固定首屏页面壳子，功能页不做整页纵向滚动。"""
+    """固定首屏页面壳子 —— 不可整页纵向滚动，内容必须适配窗口。"""
 
     def __init__(self, page_key: str, title: str, subtitle: str, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.page_key = page_key
         self.setObjectName(page_key)
-        self.setStyleSheet(f"background-color: {BG_COLOR};")
+        self.setStyleSheet(f"background-color: {BG_CONTENT};")
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 14, 20, 18)
-        layout.setSpacing(12)
+        layout.setContentsMargins(SPACING_XL, SPACING_LG, SPACING_XL, SPACING_LG)
+        layout.setSpacing(SPACING_MD)
         self.container_layout = layout
 
         header = QWidget(self)
         header_layout = QVBoxLayout(header)
         header_layout.setContentsMargins(0, 0, 0, 0)
-        header_layout.setSpacing(4)
+        header_layout.setSpacing(2)
 
         title_label = TitleLabel(title, header)
-        title_label.setStyleSheet(f"color: {TEXT_COLOR}; background: transparent; font-size: 20px; font-weight: 600;")
+        title_label.setStyleSheet(
+            f"color: {TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_XL}px; font-weight: 600;"
+        )
         header_layout.addWidget(title_label)
         if subtitle:
-            subtitle_label = BodyLabel(subtitle, header)
-            subtitle_label.setWordWrap(True)
-            subtitle_label.setStyleSheet(f"color: {MUTED_TEXT_COLOR}; background: transparent; font-size: 12px;")
-            header_layout.addWidget(subtitle_label)
-        layout.addWidget(header, 0)
+            sub = BodyLabel(subtitle, header)
+            sub.setWordWrap(True)
+            sub.setStyleSheet(
+                f"color: {TEXT_MUTED}; background: transparent; font-size: {FONT_SIZE_XS}px;"
+            )
+            header_layout.addWidget(sub)
+        layout.addWidget(header)
 
     def scroll_to_top(self) -> None:
         pass
 
 
 class StatusDot(QFrame):
-    """状态圆点。颜色和文字一起使用，避免只靠颜色表达状态。"""
+    """精致状态圆点 —— 外圈光环 + 内圈实心。"""
 
     STATE_COLORS = {
         "idle": IDLE_COLOR,
@@ -152,26 +194,28 @@ class StatusDot(QFrame):
         "error": ERROR_COLOR,
     }
 
-    def __init__(self, parent: Optional[QWidget] = None, *, size: int = 9):
+    def __init__(self, parent: Optional[QWidget] = None, *, size: int = 10):
         super().__init__(parent)
         self._size = size
-        self.setFixedSize(size, size)
+        self.setFixedSize(size + 6, size + 6)
         self.set_state("idle")
 
     def set_state(self, state: str) -> None:
         color = self.STATE_COLORS.get(state, IDLE_COLOR)
-        alpha = 170 if state == "idle" else 255
+        glow = f"rgba({int(QColor(color).red())}, {int(QColor(color).green())}, {int(QColor(color).blue())}, 0.18)"
         self.setStyleSheet(
             f"""
-            background-color: {color};
-            border: 1px solid rgba(241, 245, 249, {alpha});
-            border-radius: {(self._size + 1) // 2}px;
+            QFrame {{
+                background-color: {color};
+                border: 1.5px solid {glow};
+                border-radius: {(self._size + 6) // 2}px;
+            }}
             """
         )
 
 
 class MetricCard(QFrame):
-    """紧凑数字卡片，只展示一个重点指标。"""
+    """精致指标卡片 —— 大数字、微弱标签、顶部色条。"""
 
     def __init__(
         self,
@@ -186,57 +230,65 @@ class MetricCard(QFrame):
         self._animations: List[QPropertyAnimation] = []
         self._accent_color = accent_color
         apply_card_style(self, "metric")
+        self.setMinimumHeight(86)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 14, 16, 14)
-        layout.setSpacing(6)
+        layout.setContentsMargins(SPACING_LG, SPACING_MD, SPACING_LG, SPACING_MD)
+        layout.setSpacing(SPACING_SM)
 
+        # 顶部细色条
         accent = QFrame(self)
-        accent.setFixedHeight(3)
-        accent.setStyleSheet(f"background-color: {accent_color}; border-radius: 2px;")
+        accent.setFixedHeight(2)
+        accent.setStyleSheet(
+            f"background-color: {accent_color}; border-radius: 1px; border: 0;"
+        )
         layout.addWidget(accent)
 
-        caption = BodyLabel(title, self)
-        caption.setAlignment(Qt.AlignCenter)
-        caption.setStyleSheet(f"color: {MUTED_TEXT_COLOR}; background: transparent; font-size: 12px;")
-
+        # 数字
         self.value_label = TitleLabel(value, self)
-        self.value_label.setAlignment(Qt.AlignCenter)
-        self.value_label.setStyleSheet(f"color: {TEXT_COLOR}; background: transparent; font-size: 24px; font-weight: 700;")
-        layout.addWidget(self.value_label, 0, Qt.AlignCenter)
+        self.value_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.value_label.setStyleSheet(
+            f"color: {TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_XXL}px; font-weight: 700;"
+        )
+        layout.addWidget(self.value_label)
+
+        # 标签
+        caption = BodyLabel(title, self)
+        caption.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        caption.setStyleSheet(
+            f"color: {TEXT_MUTED}; background: transparent; font-size: {FONT_SIZE_XS}px;"
+        )
         layout.addWidget(caption)
 
+        # 辅助说明
         self.note_label = BodyLabel(note, self)
-        self.note_label.setAlignment(Qt.AlignCenter)
+        self.note_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.note_label.setWordWrap(True)
-        self.note_label.setStyleSheet(f"color: {MUTED_TEXT_COLOR}; background: transparent; font-size: 12px;")
+        self.note_label.setStyleSheet(
+            f"color: {TEXT_MUTED}; background: transparent; font-size: 10px;"
+        )
         layout.addWidget(self.note_label)
+        layout.addStretch()
 
-        layout.addStretch(1)
-
-        self.setMinimumHeight(108)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
     def set_value(self, value: str) -> None:
         if self.value_label.text() != value:
             self.value_label.setText(value)
             _start_opacity_flash(self.value_label, self, self._animations)
-            return
-        self.value_label.setText(value)
 
     def set_note(self, note: str) -> None:
         self.note_label.setText(note)
 
 
 class StageBoard(QFrame):
-    """横向阶段进度，跟随真实状态和日志推进。"""
+    """横向阶段进度 —— 圆点序号 + 连接线 + 状态动效。"""
 
     def __init__(self, title: str, stages: List[tuple[str, str]], parent: Optional[QWidget] = None):
         super().__init__(parent)
         self._animations: List[QPropertyAnimation] = []
         self.setObjectName("stageBoard")
         apply_card_style(self, "panel")
-        install_shadow(self)
 
         self.stage_order = [key for key, _ in stages]
         self.stage_rows: Dict[str, Dict[str, QLabel | QWidget]] = {}
@@ -244,108 +296,100 @@ class StageBoard(QFrame):
         self.current_stage_key: Optional[str] = None
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 14, 16, 14)
-        layout.setSpacing(12)
+        layout.setContentsMargins(SPACING_LG, SPACING_MD + 2, SPACING_LG, SPACING_MD + 2)
+        layout.setSpacing(SPACING_SM)
 
-        title_label = StrongBodyLabel(title, self)
-        title_label.setStyleSheet(f"color: {TEXT_COLOR}; background: transparent; font-size: 14px; font-weight: 600;")
-        layout.addWidget(title_label)
+        lbl = StrongBodyLabel(title, self)
+        lbl.setStyleSheet(
+            f"color: {TEXT_MUTED}; background: transparent; font-size: {FONT_SIZE_XS}px; text-transform: uppercase; letter-spacing: 0.5px;"
+        )
+        layout.addWidget(lbl)
 
         track = QWidget(self)
         track_layout = QHBoxLayout(track)
         track_layout.setContentsMargins(0, 0, 0, 0)
-        track_layout.setSpacing(8)
+        track_layout.setSpacing(0)
         layout.addWidget(track)
 
         for index, (stage_key, stage_title) in enumerate(stages, start=1):
-            row = QWidget(track)
-            row_layout = QVBoxLayout(row)
-            row_layout.setContentsMargins(0, 0, 0, 0)
-            row_layout.setSpacing(6)
+            col = QWidget(track)
+            col_layout = QVBoxLayout(col)
+            col_layout.setContentsMargins(0, 0, 0, 0)
+            col_layout.setSpacing(4)
 
-            dot_label = QLabel(str(index), row)
-            dot_label.setAlignment(Qt.AlignCenter)
-            dot_label.setFixedSize(24, 24)
-            row_layout.addWidget(dot_label, 0, Qt.AlignHCenter)
+            dot = QLabel(str(index), col)
+            dot.setAlignment(Qt.AlignCenter)
+            dot.setFixedSize(24, 24)
+            col_layout.addWidget(dot, 0, Qt.AlignHCenter)
 
-            title_widget = QLabel(stage_title, row)
-            title_widget.setAlignment(Qt.AlignCenter)
-            title_widget.setWordWrap(True)
-            detail_widget = QLabel("", row)
-            detail_widget.hide()
-            row_layout.addWidget(title_widget)
-            row_layout.addWidget(detail_widget)
+            title_w = QLabel(stage_title, col)
+            title_w.setAlignment(Qt.AlignCenter)
+            title_w.setWordWrap(True)
+            col_layout.addWidget(title_w)
 
-            self.stage_rows[stage_key] = {
-                "container": row,
-                "dot": dot_label,
-                "title": title_widget,
-                "detail": detail_widget,
-            }
-            track_layout.addWidget(row, 1)
+            self.stage_rows[stage_key] = {"container": col, "dot": dot, "title": title_w}
+            track_layout.addWidget(col, 1)
+
             if index < len(stages):
-                line_host = QWidget(track)
-                line_host.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-                line_host_layout = QVBoxLayout(line_host)
-                line_host_layout.setContentsMargins(0, 11, 0, 0)
-                line_host_layout.setSpacing(0)
-                line = QFrame(line_host)
-                line.setFixedHeight(2)
+                line = QFrame(track)
+                line.setFixedHeight(1)
                 line.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-                line.setStyleSheet(f"background-color: {WEAK_BORDER_COLOR}; border: 0;")
-                line_host_layout.addWidget(line)
-                line_host_layout.addStretch(1)
+                line.setStyleSheet(f"background-color: {BORDER_DEFAULT}; border: 0;")
+                line_filler = QWidget(track)
+                filler_layout = QVBoxLayout(line_filler)
+                filler_layout.setContentsMargins(0, 11, 0, 0)
+                filler_layout.addWidget(line)
+                filler_layout.addStretch()
                 self.stage_rows[stage_key]["line"] = line
-                track_layout.addWidget(line_host, 1)
+                track_layout.addWidget(line_filler, 2)
 
-        self.detail_label = BodyLabel("等待开始", self)
+        self.detail_label = BodyLabel("准备就绪", self)
         self.detail_label.setWordWrap(True)
-        self.detail_label.setStyleSheet(f"color: {MUTED_TEXT_COLOR}; background: transparent;")
+        self.detail_label.setStyleSheet(f"color: {TEXT_MUTED}; background: transparent; font-size: {FONT_SIZE_XS}px;")
         layout.addWidget(self.detail_label)
         self.reset()
 
     def reset(self) -> None:
         self.stage_details.clear()
         self.current_stage_key = None
-        for index, stage_key in enumerate(self.stage_order):
-            detail = "等待开始" if index == 0 else ""
-            self.stage_details[stage_key] = detail
-            self._apply_state(stage_key, "pending", detail)
-        self.detail_label.setText("等待开始")
+        for i, key in enumerate(self.stage_order):
+            detail = "准备就绪" if i == 0 else ""
+            self.stage_details[key] = detail
+            self._apply_state(key, "pending", detail)
+        self.detail_label.setText("准备就绪")
 
     def activate(self, stage_key: str, detail: str = "") -> None:
         if stage_key not in self.stage_rows:
             return
         self.current_stage_key = stage_key
-        current_index = self.stage_order.index(stage_key)
+        ci = self.stage_order.index(stage_key)
         if detail:
             self.stage_details[stage_key] = detail
-
-        for index, key in enumerate(self.stage_order):
-            if index < current_index:
+        for i, key in enumerate(self.stage_order):
+            if i < ci:
                 self._apply_state(key, "done", self.stage_details.get(key, "已完成"))
-            elif index == current_index:
+            elif i == ci:
                 self._apply_state(key, "running", self.stage_details.get(key, detail))
                 self.detail_label.setText(self.stage_details.get(key, detail) or "运行中")
             else:
                 self._apply_state(key, "pending", self.stage_details.get(key, ""))
 
     def finish(self, detail: str = "已完成") -> None:
-        for stage_key in self.stage_order[:-1]:
-            self._apply_state(stage_key, "done", self.stage_details.get(stage_key, "已完成"))
-        final_key = self.stage_order[-1]
-        self.stage_details[final_key] = detail
-        self._apply_state(final_key, "done", detail)
+        for key in self.stage_order[:-1]:
+            self._apply_state(key, "done", self.stage_details.get(key, "已完成"))
+        final = self.stage_order[-1]
+        self.stage_details[final] = detail
+        self._apply_state(final, "done", detail)
         self.detail_label.setText(detail)
-        self.current_stage_key = final_key
+        self.current_stage_key = final
 
     def fail(self, detail: str) -> None:
         stage_key = self.current_stage_key or self.stage_order[0]
-        current_index = self.stage_order.index(stage_key)
-        for index, key in enumerate(self.stage_order):
-            if index < current_index:
+        ci = self.stage_order.index(stage_key)
+        for i, key in enumerate(self.stage_order):
+            if i < ci:
                 self._apply_state(key, "done", self.stage_details.get(key, "已完成"))
-            elif index == current_index:
+            elif i == ci:
                 self._apply_state(key, "error", detail)
                 self.detail_label.setText(detail)
             else:
@@ -353,53 +397,45 @@ class StageBoard(QFrame):
 
     def _apply_state(self, stage_key: str, state: str, detail: str) -> None:
         row = self.stage_rows[stage_key]
-        container = row["container"]
         dot = row["dot"]
         title = row["title"]
-        detail_label = row["detail"]
-
-        if not isinstance(container, QWidget) or not isinstance(dot, QLabel) or not isinstance(title, QLabel) or not isinstance(detail_label, QLabel):
+        if not isinstance(dot, QLabel) or not isinstance(title, QLabel):
             return
 
         if state == "running":
             dot_color = RUNNING_COLOR
-            title_color = TEXT_COLOR
-            detail_color = TEXT_COLOR
-            dot_background = "rgba(52, 211, 153, 48)"
+            title_color = TEXT_PRIMARY
+            dot_bg = ACCENT_BG_MEDIUM
             line_color = RUNNING_COLOR
         elif state == "done":
             dot_color = SUCCESS_COLOR
-            title_color = TEXT_COLOR
-            detail_color = MUTED_TEXT_COLOR
-            dot_background = ACCENT_SOFT_COLOR
+            title_color = TEXT_PRIMARY
+            dot_bg = "rgba(61, 214, 140, 0.08)"
             line_color = SUCCESS_COLOR
         elif state == "error":
             dot_color = ERROR_COLOR
-            title_color = TEXT_COLOR
-            detail_color = ERROR_COLOR
-            dot_background = "rgba(248, 113, 113, 42)"
+            title_color = TEXT_PRIMARY
+            dot_bg = "rgba(240, 71, 112, 0.10)"
             line_color = ERROR_COLOR
         else:
             dot_color = IDLE_COLOR
-            title_color = MUTED_TEXT_COLOR
-            detail_color = MUTED_TEXT_COLOR
-            dot_background = "rgba(100, 116, 139, 24)"
-            line_color = WEAK_BORDER_COLOR
+            title_color = TEXT_MUTED
+            dot_bg = "rgba(92, 101, 120, 0.08)"
+            line_color = BORDER_DEFAULT
 
-        container.setStyleSheet("background: transparent; border: 0;")
         dot.setStyleSheet(
             f"""
-            color: {dot_color if state == "pending" else TEXT_COLOR};
-            background-color: {dot_background};
+            color: {TEXT_PRIMARY if state != 'pending' else TEXT_MUTED};
+            background-color: {dot_bg};
             border: 1px solid {dot_color};
             border-radius: 12px;
-            font-size: 12px;
+            font-size: {FONT_SIZE_XS}px;
             font-weight: 600;
             """
         )
-        title.setStyleSheet(f"color: {title_color}; background: transparent; font-size: 12px; font-weight: 600;")
-        detail_label.setStyleSheet(f"color: {detail_color}; background: transparent; font-size: 12px;")
-        detail_label.setText(detail)
+        title.setStyleSheet(
+            f"color: {title_color}; background: transparent; font-size: {FONT_SIZE_XS}px; font-weight: 500;"
+        )
         line = row.get("line")
         if isinstance(line, QFrame):
             line.setStyleSheet(f"background-color: {line_color}; border: 0;")
@@ -408,7 +444,7 @@ class StageBoard(QFrame):
 
 
 class ActionCard(QFrame):
-    """首页大按钮卡片，用按钮承担明确点击目标。"""
+    """工作台入口卡片 —— 悬停浮起 + 仅左侧细色条点缀。"""
 
     def __init__(
         self,
@@ -423,55 +459,47 @@ class ActionCard(QFrame):
         super().__init__(parent)
         variant = "hero" if primary else "panel"
         apply_card_style(self, variant)
-        self.setStyleSheet(
-            self.styleSheet()
-            + f"""
-            QFrame#{variant}Card {{
-                border: 1px solid {WEAK_BORDER_COLOR};
-            }}
-            QFrame#{variant}Card:hover {{
-                border-color: rgba(52, 211, 153, 125);
-            }}
-            """
-        )
+        self.setCursor(Qt.PointingHandCursor)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 14, 16, 14)
-        layout.setSpacing(10)
+        layout.setContentsMargins(SPACING_LG, SPACING_LG, SPACING_LG, SPACING_LG)
+        layout.setSpacing(SPACING_SM)
+
+        from qfluentwidgets import IconWidget, PushButton
 
         header_row = QHBoxLayout()
-        header_row.setContentsMargins(0, 0, 0, 0)
-        header_row.setSpacing(8)
+        header_row.setSpacing(SPACING_SM)
         if icon is not None:
-            from qfluentwidgets import IconWidget
-
-            icon_widget = IconWidget(icon, self)
-            icon_widget.setFixedSize(22, 22)
-            header_row.addWidget(icon_widget, 0, Qt.AlignTop)
-
-        title_label = StrongBodyLabel(title, self)
-        title_label.setStyleSheet(f"color: {TEXT_COLOR}; background: transparent; font-size: 14px; font-weight: 600;")
-        header_row.addWidget(title_label, 1)
+            iw = IconWidget(icon, self)
+            iw.setFixedSize(20, 20)
+            header_row.addWidget(iw, 0, Qt.AlignTop)
+        tl = StrongBodyLabel(title, self)
+        tl.setStyleSheet(
+            f"color: {TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_MD}px; font-weight: 600;"
+        )
+        header_row.addWidget(tl, 1)
         layout.addLayout(header_row)
 
-        desc_label = BodyLabel(description, self)
-        desc_label.setWordWrap(True)
-        desc_label.setStyleSheet(f"color: {MUTED_TEXT_COLOR}; background: transparent; font-size: 12px;")
-        layout.addWidget(desc_label)
+        dl = BodyLabel(description, self)
+        dl.setWordWrap(True)
+        dl.setStyleSheet(
+            f"color: {TEXT_MUTED}; background: transparent; font-size: {FONT_SIZE_XS}px;"
+        )
+        layout.addWidget(dl)
         layout.addStretch(1)
 
-        from qfluentwidgets import PrimaryPushButton, PushButton
-
-        self.button = PrimaryPushButton(button_text, self) if primary else PushButton(button_text, self)
-        self.button.setObjectName("smallButton")
+        self.button = PushButton(button_text, self)
+        self.button.setObjectName("accentButton")
         layout.addWidget(self.button, 0, Qt.AlignLeft)
 
 
-def build_tab_host(parent: QWidget, tabs: List[tuple[str, str, QWidget]]) -> tuple[QWidget, SegmentedWidget, QStackedWidget]:
+def build_tab_host(
+    parent: QWidget, tabs: List[tuple[str, str, QWidget]]
+) -> tuple[QWidget, SegmentedWidget, QStackedWidget]:
     host = QWidget(parent)
     layout = QVBoxLayout(host)
     layout.setContentsMargins(0, 0, 0, 0)
-    layout.setSpacing(10)
+    layout.setSpacing(SPACING_SM)
 
     segmented = SegmentedWidget(host)
     stacked = QStackedWidget(host)
@@ -480,7 +508,9 @@ def build_tab_host(parent: QWidget, tabs: List[tuple[str, str, QWidget]]) -> tup
 
     for route_key, text, widget in tabs:
         stacked.addWidget(widget)
-        segmented.addItem(route_key, text, onClick=lambda w=widget: stacked.setCurrentWidget(w))
+        segmented.addItem(
+            route_key, text, onClick=lambda w=widget: stacked.setCurrentWidget(w)
+        )
 
     if tabs:
         segmented.setCurrentItem(tabs[0][0])
@@ -499,29 +529,30 @@ def build_result_table(parent: QWidget) -> TableWidget:
     table.setAlternatingRowColors(True)
     table.setWordWrap(False)
     table.setMinimumHeight(120)
-    table.verticalHeader().setDefaultSectionSize(28)
+    table.verticalHeader().setDefaultSectionSize(30)
     table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
     table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
     table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
     table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
     table.setStyleSheet(
         f"""
-        background-color: #172033;
-        alternate-background-color: #1C283B;
-        color: {SECONDARY_TEXT_COLOR};
-        border: 1px solid {WEAK_BORDER_COLOR};
-        border-radius: 8px;
-        gridline-color: rgba(71, 85, 105, 70);
-        selection-background-color: rgba(52, 211, 153, 55);
-        selection-color: {TEXT_COLOR};
+        background-color: #0C131F;
+        alternate-background-color: #101826;
+        color: {TEXT_SECONDARY};
+        border: 1px solid {BORDER_DEFAULT};
+        border-radius: {RADIUS_MD}px;
+        gridline-color: rgba(255, 255, 255, 0.03);
+        selection-background-color: {ACCENT_BG_MEDIUM};
+        selection-color: {TEXT_PRIMARY};
+        font-size: {FONT_SIZE_XS}px;
         """
     )
     return table
 
 
 def populate_result_row(table: TableWidget, row_index: int, values: List[str]) -> None:
-    for column_index, value in enumerate(values):
+    for ci, value in enumerate(values):
         item = QTableWidgetItem(value)
         item.setToolTip(value)
-        item.setForeground(QBrush(QColor(TEXT_COLOR)))
-        table.setItem(row_index, column_index, item)
+        item.setForeground(QBrush(QColor(TEXT_PRIMARY)))
+        table.setItem(row_index, ci, item)
