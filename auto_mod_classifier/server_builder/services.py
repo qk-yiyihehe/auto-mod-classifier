@@ -647,7 +647,13 @@ class ServerInstallService:
         self.common.log_line(f"下载官方安装器：{spec.download_url}")
         reporter = DownloadStatsReporter(self.runtime.set_download_status, total_files=1, thread_limit=1)
         try:
-            self.common.http_download(spec.download_url, destination, reporter=reporter)
+            self.common.http_download(
+                spec.download_url,
+                destination,
+                reporter=reporter,
+                log_callback=self.common.log_line,
+                display_name=spec.file_name,
+            )
         finally:
             reporter.close()
         return destination

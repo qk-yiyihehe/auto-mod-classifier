@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Optional, Tuple
+from typing import Any, Callable, Optional, Tuple
 
 from ..download_support import DownloadStatsReporter, http_download, http_get_json, http_get_text
 from ..shared import *
@@ -39,13 +39,22 @@ class ServerBuilderCommonService:
         self.runtime.network_cache[cache_key] = data
         return data
 
-    def http_download(self, url: str, destination: Path, reporter: Optional[DownloadStatsReporter] = None) -> None:
+    def http_download(
+        self,
+        url: str,
+        destination: Path,
+        reporter: Optional[DownloadStatsReporter] = None,
+        display_name: Optional[str] = None,
+        log_callback: Optional[Callable[[str], None]] = None,
+    ) -> None:
         http_download(
             url,
             destination,
             self.runtime.download_source,
             reporter=reporter,
             timeout=60,
+            display_name=display_name,
+            log_callback=log_callback,
         )
 
     def get_application_dir(self) -> Path:

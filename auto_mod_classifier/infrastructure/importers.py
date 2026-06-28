@@ -317,9 +317,18 @@ class MrpackSourceImporter:
             temp_name = hashlib.sha1(relative_path.encode("utf-8")).hexdigest()[:16] + "_" + Path(relative_path).name
             temp_download = downloads_root / temp_name
             try:
-                http_download(download_urls, temp_download, download_source, reporter=reporter)
+                http_download(
+                    download_urls,
+                    temp_download,
+                    download_source,
+                    reporter=reporter,
+                    display_name=relative_path,
+                    log_callback=lambda message: _emit(emit, "log", message),
+                    log_success=False,
+                )
                 _verify_download_hash(temp_download, item.get("hashes") or {})
                 shutil.move(str(temp_download), str(target_path))
+                _emit(emit, "log", f"[下载成功] {relative_path}")
             except Exception as exc:
                 if temp_download.exists():
                     temp_download.unlink()
@@ -490,7 +499,16 @@ class ZipModpackSourceImporter:
 
                 destination = mods_dir / file_name
                 try:
-                    http_download(download_url, destination, request_download_source, reporter=reporter)
+                    http_download(
+                        download_url,
+                        destination,
+                        request_download_source,
+                        reporter=reporter,
+                        display_name=file_name,
+                        log_callback=lambda message: _emit(emit, "log", message),
+                        log_success=False,
+                    )
+                    _emit(emit, "log", f"[下载成功] {file_name}")
                 except Exception as exc:
                     raise RuntimeError(f"CurseForge 文件下载失败：{file_name}\n{exc}") from exc
 

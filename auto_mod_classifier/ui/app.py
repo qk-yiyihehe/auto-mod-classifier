@@ -44,14 +44,14 @@ class App:
         self.mod_use_mcmod_var = tk.BooleanVar(value=True)
         self.mod_use_cf_var = tk.BooleanVar(value=False)
         self.mod_second_pass_var = tk.BooleanVar(value=False)
-        self.mod_download_source_var = tk.StringVar(value=DOWNLOAD_SOURCE_OFFICIAL)
+        self.mod_download_source_var = tk.StringVar(value=DOWNLOAD_SOURCE_LABELS[DOWNLOAD_SOURCE_SMART])
 
         self.server_client_path_var = tk.StringVar()
         self.server_output_path_var = tk.StringVar()
         self.server_use_mcmod_var = tk.BooleanVar(value=True)
         self.server_use_cf_var = tk.BooleanVar(value=False)
         self.server_second_pass_var = tk.BooleanVar(value=False)
-        self.server_download_source_var = tk.StringVar(value=DOWNLOAD_SOURCE_OFFICIAL)
+        self.server_download_source_var = tk.StringVar(value=DOWNLOAD_SOURCE_LABELS[DOWNLOAD_SOURCE_SMART])
 
         self.worker_thread: Optional[threading.Thread] = None
         self.ui_queue: "queue.Queue[dict]" = queue.Queue()
@@ -215,11 +215,16 @@ class App:
         source_options = ttk.Frame(parent, padding=(0, 8, 0, 0))
         source_options.pack(fill="x")
         ttk.Label(source_options, text="下载源：").pack(side="left")
-        ttk.Radiobutton(source_options, text="官方源", value=DOWNLOAD_SOURCE_OFFICIAL, variable=self.mod_download_source_var).pack(side="left")
-        ttk.Radiobutton(source_options, text="国内镜像", value=DOWNLOAD_SOURCE_DOMESTIC, variable=self.mod_download_source_var).pack(side="left", padx=(10, 0))
+        ttk.Combobox(
+            source_options,
+            textvariable=self.mod_download_source_var,
+            values=[label for _, label in DOWNLOAD_SOURCE_OPTIONS],
+            state="readonly",
+            width=22,
+        ).pack(side="left", padx=(8, 0))
         ttk.Label(
             source_options,
-            text="支持目录、mrpack、zip。也可以把路径直接拖到输入框里或粘贴进去。",
+            text="支持目录、mrpack、zip。智能优选会自动尝试 MCIM、BMCLAPI、官方源，并比较直连和系统代理。",
             foreground="#666",
         ).pack(side="left", padx=(18, 0))
 
@@ -275,11 +280,16 @@ class App:
         source_options = ttk.Frame(parent, padding=(0, 8, 0, 0))
         source_options.pack(fill="x")
         ttk.Label(source_options, text="下载源：").pack(side="left")
-        ttk.Radiobutton(source_options, text="官方源", value=DOWNLOAD_SOURCE_OFFICIAL, variable=self.server_download_source_var).pack(side="left")
-        ttk.Radiobutton(source_options, text="国内镜像", value=DOWNLOAD_SOURCE_DOMESTIC, variable=self.server_download_source_var).pack(side="left", padx=(10, 0))
+        ttk.Combobox(
+            source_options,
+            textvariable=self.server_download_source_var,
+            values=[label for _, label in DOWNLOAD_SOURCE_OPTIONS],
+            state="readonly",
+            width=22,
+        ).pack(side="left", padx=(8, 0))
         ttk.Label(
             source_options,
-            text="可直接导入完整客户端、mrpack、CurseForge zip 等整合包。",
+            text="可直接导入完整客户端、mrpack、CurseForge zip。智能优选会自动尝试 MCIM、BMCLAPI、官方源，并比较直连和系统代理。",
             foreground="#666",
         ).pack(side="left", padx=(18, 0))
 
@@ -365,6 +375,16 @@ class App:
         messagebox.showerror(APP_TITLE, f"{target_name}不存在。")
         return False
 
+    def resolve_download_source(self, display_text: str) -> str:
+        if display_text in {value for value, _ in DOWNLOAD_SOURCE_OPTIONS}:
+            return display_text
+        for value, label in DOWNLOAD_SOURCE_OPTIONS:
+            if label == display_text:
+                return value
+        if display_text == DOWNLOAD_SOURCE_LABELS.get(DOWNLOAD_SOURCE_DOMESTIC):
+            return DOWNLOAD_SOURCE_SMART
+        return DOWNLOAD_SOURCE_SMART
+
     def start_mod_task(self) -> None:
         if self.worker_thread and self.worker_thread.is_alive():
             messagebox.showinfo(APP_TITLE, "任务正在运行，请先等待当前任务结束。")
@@ -388,7 +408,7 @@ class App:
         self.get_panel("mod").status_var.set("准备开始…")
         options = ModTaskOptions(
             mods_path=path,
-            download_source=self.mod_download_source_var.get(),
+            download_source=self.resolve_download_source(self.mod_download_source_var.get()),
             dry_run=self.mod_dry_run_var.get(),
             use_mcmod=self.mod_use_mcmod_var.get(),
             use_curseforge=self.mod_use_cf_var.get(),
@@ -433,7 +453,7 @@ class App:
         options = ServerTaskOptions(
             client_dir=client_path,
             output_dir=Path(output_dir),
-            download_source=self.server_download_source_var.get(),
+            download_source=self.resolve_download_source(self.server_download_source_var.get()),
             use_mcmod=self.server_use_mcmod_var.get(),
             use_curseforge=self.server_use_cf_var.get(),
             enable_second_pass=self.server_second_pass_var.get(),

@@ -1,16 +1,50 @@
 import json
+import math
+import socket
 import threading
 import time
+import urllib.error
+import urllib.parse
 import urllib.request
 from collections import deque
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Iterable, Optional, Sequence, Union
+from typing import Any, Callable, Optional, Sequence, Union
 
-from .shared import DOWNLOAD_SOURCE_DOMESTIC, USER_AGENT
+from .shared import (
+    DOWNLOAD_SOURCE_BMCLAPI,
+    DOWNLOAD_SOURCE_DOMESTIC,
+    DOWNLOAD_SOURCE_LABELS,
+    DOWNLOAD_SOURCE_MCIM,
+    DOWNLOAD_SOURCE_OFFICIAL,
+    DOWNLOAD_SOURCE_SMART,
+    USER_AGENT,
+)
 
 DEFAULT_DOWNLOAD_WORKERS = 6
+DEFAULT_DOWNLOAD_TIMEOUT_SECONDS = 15
+DEFAULT_METADATA_TIMEOUT_SECONDS = 12
 _PROGRESS_UPDATE_INTERVAL_SECONDS = 0.25
 _PROGRESS_SAMPLE_WINDOW_SECONDS = 2.0
+_ATTEMPT_SUCCESS_CACHE_TTL_SECONDS = 300.0
+_ATTEMPT_FAILURE_CACHE_TTL_SECONDS = 45.0
+
+_DIRECT_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+_ATTEMPT_SCORE_CACHE: dict[tuple[str, str, str], tuple[float, float]] = {}
+_ATTEMPT_SCORE_LOCK = threading.Lock()
+
+
+@dataclass(frozen=True)
+class DownloadAttempt:
+    url: str
+    source_code: str
+    source_label: str
+    route_code: str
+    route_label: str
+
+    @property
+    def display_label(self) -> str:
+        return f"{self.source_label} / {self.route_label}"
 
 
 def format_bytes(size: float) -> str:
@@ -42,11 +76,16 @@ def choose_download_worker_count(total_files: int) -> int:
     return min(DEFAULT_DOWNLOAD_WORKERS, max(1, total_files))
 
 
-def rewrite_download_url(url: str, download_source: str) -> str:
-    """按用户选择切换官方源或国内镜像。"""
-    if download_source != DOWNLOAD_SOURCE_DOMESTIC:
-        return url
+def normalize_download_source(download_source: str) -> str:
+    """兼容旧值，统一收敛成当前支持的下载策略。"""
+    if download_source == DOWNLOAD_SOURCE_DOMESTIC:
+        return DOWNLOAD_SOURCE_SMART
+    if download_source in {DOWNLOAD_SOURCE_SMART, DOWNLOAD_SOURCE_OFFICIAL, DOWNLOAD_SOURCE_BMCLAPI, DOWNLOAD_SOURCE_MCIM}:
+        return download_source
+    return DOWNLOAD_SOURCE_SMART
 
+
+def _rewrite_to_mcim(url: str) -> str:
     replacements = (
         ("https://api.modrinth.com/", "https://mod.mcimirror.top/modrinth/"),
         ("https://cdn.modrinth.com/", "https://mod.mcimirror.top/"),
@@ -55,10 +94,6 @@ def rewrite_download_url(url: str, download_source: str) -> str:
         ("https://mediafilez.forgecdn.net/", "https://mod.mcimirror.top/"),
         ("http://edge.forgecdn.net/", "https://mod.mcimirror.top/"),
         ("http://mediafilez.forgecdn.net/", "https://mod.mcimirror.top/"),
-        ("https://meta.fabricmc.net/", "https://bmclapi2.bangbang93.com/fabric-meta/"),
-        ("https://maven.fabricmc.net/", "https://bmclapi2.bangbang93.com/maven/"),
-        ("https://maven.minecraftforge.net/", "https://bmclapi2.bangbang93.com/maven/"),
-        ("https://maven.neoforged.net/releases/", "https://bmclapi2.bangbang93.com/maven/"),
     )
     for before, after in replacements:
         if url.startswith(before):
@@ -66,21 +101,197 @@ def rewrite_download_url(url: str, download_source: str) -> str:
     return url
 
 
+def _rewrite_to_bmclapi(url: str) -> str:
+    replacements = (
+        ("https://meta.fabricmc.net/", "https://bmclapi2.bangbang93.com/fabric-meta/"),
+        ("https://maven.fabricmc.net/", "https://bmclapi2.bangbang93.com/maven/"),
+        ("https://maven.minecraftforge.net/", "https://bmclapi2.bangbang93.com/maven/"),
+        ("https://maven.neoforged.net/releases/", "https://bmclapi2.bangbang93.com/maven/"),
+        ("https://piston-meta.mojang.com/", "https://bmclapi2.bangbang93.com/"),
+        ("https://piston-data.mojang.com/", "https://bmclapi2.bangbang93.com/"),
+        ("https://launcher.mojang.com/", "https://bmclapi2.bangbang93.com/"),
+        ("https://launchermeta.mojang.com/", "https://bmclapi2.bangbang93.com/"),
+    )
+    for before, after in replacements:
+        if url.startswith(before):
+            return after + url[len(before) :]
+    return url
+
+
+def _build_source_variants(url: str) -> dict[str, str]:
+    variants = {DOWNLOAD_SOURCE_OFFICIAL: url}
+    mcim_url = _rewrite_to_mcim(url)
+    if mcim_url != url:
+        variants[DOWNLOAD_SOURCE_MCIM] = mcim_url
+    bmclapi_url = _rewrite_to_bmclapi(url)
+    if bmclapi_url != url:
+        variants[DOWNLOAD_SOURCE_BMCLAPI] = bmclapi_url
+    return variants
+
+
 def build_download_candidates(urls: Union[str, Sequence[str]], download_source: str) -> list[str]:
-    """把官方地址和镜像地址按优先级展开，并去重。"""
+    """只返回 URL 级别候选，主要给调试和最小验证用。"""
     raw_urls = [urls] if isinstance(urls, str) else list(urls)
+    profile = normalize_download_source(download_source)
+    if profile == DOWNLOAD_SOURCE_SMART:
+        source_priority = [DOWNLOAD_SOURCE_MCIM, DOWNLOAD_SOURCE_BMCLAPI, DOWNLOAD_SOURCE_OFFICIAL]
+    elif profile == DOWNLOAD_SOURCE_BMCLAPI:
+        source_priority = [DOWNLOAD_SOURCE_BMCLAPI, DOWNLOAD_SOURCE_OFFICIAL]
+    elif profile == DOWNLOAD_SOURCE_MCIM:
+        source_priority = [DOWNLOAD_SOURCE_MCIM, DOWNLOAD_SOURCE_OFFICIAL]
+    else:
+        source_priority = [DOWNLOAD_SOURCE_OFFICIAL]
+
     candidates: list[str] = []
     seen: set[str] = set()
     for url in raw_urls:
         if not url:
             continue
-        expanded = (rewrite_download_url(url, download_source), url)
-        for candidate in expanded:
-            if not candidate or candidate in seen:
-                continue
-            seen.add(candidate)
-            candidates.append(candidate)
+        variants = _build_source_variants(url)
+        for source_code in source_priority:
+            candidate = variants.get(source_code)
+            if candidate and candidate not in seen:
+                seen.add(candidate)
+                candidates.append(candidate)
     return candidates
+
+
+def _available_routes() -> list[tuple[str, str]]:
+    if urllib.request.getproxies():
+        return [("system", "系统代理"), ("direct", "直连")]
+    return [("direct", "直连")]
+
+
+def _route_rank_for_source(source_code: str) -> dict[str, int]:
+    # 官方源更可能从代理受益，国内镜像默认更适合先走直连。
+    if source_code == DOWNLOAD_SOURCE_OFFICIAL:
+        return {"system": 0, "direct": 1}
+    return {"direct": 0, "system": 1}
+
+
+def build_download_attempts(urls: Union[str, Sequence[str]], download_source: str) -> list[DownloadAttempt]:
+    raw_urls = [urls] if isinstance(urls, str) else list(urls)
+    profile = normalize_download_source(download_source)
+    routes = _available_routes()
+    if profile == DOWNLOAD_SOURCE_SMART:
+        source_priority = [DOWNLOAD_SOURCE_MCIM, DOWNLOAD_SOURCE_BMCLAPI, DOWNLOAD_SOURCE_OFFICIAL]
+    elif profile == DOWNLOAD_SOURCE_BMCLAPI:
+        source_priority = [DOWNLOAD_SOURCE_BMCLAPI, DOWNLOAD_SOURCE_OFFICIAL]
+    elif profile == DOWNLOAD_SOURCE_MCIM:
+        source_priority = [DOWNLOAD_SOURCE_MCIM, DOWNLOAD_SOURCE_OFFICIAL]
+    else:
+        source_priority = [DOWNLOAD_SOURCE_OFFICIAL]
+
+    attempts: list[DownloadAttempt] = []
+    seen: set[tuple[str, str]] = set()
+    for url in raw_urls:
+        if not url:
+            continue
+        variants = _build_source_variants(url)
+        for source_code in source_priority:
+            candidate_url = variants.get(source_code)
+            if not candidate_url:
+                continue
+            source_label = DOWNLOAD_SOURCE_LABELS.get(source_code, source_code)
+            ordered_routes = sorted(routes, key=lambda item: _route_rank_for_source(source_code).get(item[0], 99))
+            for route_code, route_label in ordered_routes:
+                key = (candidate_url, route_code)
+                if key in seen:
+                    continue
+                seen.add(key)
+                attempts.append(
+                    DownloadAttempt(
+                        url=candidate_url,
+                        source_code=source_code,
+                        source_label=source_label,
+                        route_code=route_code,
+                        route_label=route_label,
+                    )
+                )
+    return _sort_attempts(attempts, profile)
+
+
+def _sort_attempts(attempts: list[DownloadAttempt], profile: str) -> list[DownloadAttempt]:
+    if len(attempts) <= 1:
+        return attempts
+
+    if profile == DOWNLOAD_SOURCE_SMART:
+        source_rank = {
+            DOWNLOAD_SOURCE_MCIM: 0,
+            DOWNLOAD_SOURCE_BMCLAPI: 1,
+            DOWNLOAD_SOURCE_OFFICIAL: 2,
+        }
+        return sorted(attempts, key=lambda item: _build_attempt_sort_key(item, source_rank))
+
+    if profile == DOWNLOAD_SOURCE_BMCLAPI:
+        source_rank = {DOWNLOAD_SOURCE_BMCLAPI: 0, DOWNLOAD_SOURCE_OFFICIAL: 1}
+    elif profile == DOWNLOAD_SOURCE_MCIM:
+        source_rank = {DOWNLOAD_SOURCE_MCIM: 0, DOWNLOAD_SOURCE_OFFICIAL: 1}
+    else:
+        source_rank = {DOWNLOAD_SOURCE_OFFICIAL: 0}
+
+    return sorted(attempts, key=lambda item: _build_attempt_sort_key(item, source_rank))
+
+
+def _build_attempt_sort_key(attempt: DownloadAttempt, source_rank: dict[str, int]) -> tuple[float, float, int, int]:
+    cached_score = _get_cached_attempt_score(attempt)
+    route_rank = _route_rank_for_source(attempt.source_code).get(attempt.route_code, 99)
+    if cached_score is None:
+        return (1.0, float(source_rank.get(attempt.source_code, 99)), route_rank, 0)
+    if math.isinf(cached_score):
+        return (2.0, float(source_rank.get(attempt.source_code, 99)), route_rank, 0)
+    return (0.0, cached_score, float(source_rank.get(attempt.source_code, 99)), route_rank)
+
+
+def _attempt_cache_key(attempt: DownloadAttempt) -> tuple[str, str, str]:
+    parsed = urllib.parse.urlsplit(attempt.url)
+    return (parsed.netloc.lower(), attempt.source_code, attempt.route_code)
+
+
+def _get_cached_attempt_score(attempt: DownloadAttempt) -> Optional[float]:
+    cache_key = _attempt_cache_key(attempt)
+    now = time.monotonic()
+    with _ATTEMPT_SCORE_LOCK:
+        cached = _ATTEMPT_SCORE_CACHE.get(cache_key)
+        if not cached:
+            return None
+        ttl = _ATTEMPT_FAILURE_CACHE_TTL_SECONDS if math.isinf(cached[1]) else _ATTEMPT_SUCCESS_CACHE_TTL_SECONDS
+        if now - cached[0] < ttl:
+            return cached[1]
+        _ATTEMPT_SCORE_CACHE.pop(cache_key, None)
+    return None
+
+
+def _record_attempt_score(attempt: DownloadAttempt, score: float) -> None:
+    cache_key = _attempt_cache_key(attempt)
+    with _ATTEMPT_SCORE_LOCK:
+        _ATTEMPT_SCORE_CACHE[cache_key] = (time.monotonic(), score)
+
+
+def _record_attempt_failure(attempt: DownloadAttempt) -> None:
+    _record_attempt_score(attempt, float("inf"))
+
+
+def _open_request(req: urllib.request.Request, route_code: str, timeout: int):
+    if route_code == "direct":
+        return _DIRECT_OPENER.open(req, timeout=timeout)
+    return urllib.request.urlopen(req, timeout=timeout)
+
+
+def _format_exception_short(exc: Exception) -> str:
+    if isinstance(exc, urllib.error.HTTPError):
+        return f"HTTP {exc.code}"
+    if isinstance(exc, urllib.error.URLError):
+        reason = exc.reason
+        if isinstance(reason, socket.timeout):
+            return "长时间无进展或连接超时"
+        return str(reason or exc).strip() or exc.__class__.__name__
+    if isinstance(exc, socket.timeout):
+        return "长时间无进展或连接超时"
+    text = str(exc).strip()
+    if "timed out" in text.lower():
+        return "长时间无进展或连接超时"
+    return text or exc.__class__.__name__
 
 
 class DownloadStatsReporter:
@@ -125,7 +336,10 @@ class DownloadStatsReporter:
             self.active_files = 0
             self._samples.clear()
             self._last_emit_at = 0.0
-        self._emit_text(build_idle_download_status_text())
+            completed_files = self.completed_files
+            total_files = self.total_files
+            thread_limit = self.thread_limit
+        self._emit_text(build_download_status_text(0.0, 0, thread_limit, completed_files, total_files))
 
     def _emit_text(self, text: str) -> None:
         if callable(self.emit_status):
@@ -161,28 +375,32 @@ class DownloadStatsReporter:
         self._emit_text(text)
 
 
-def http_get_text(url: str, download_source: str, timeout: int = 45) -> str:
+def _fetch_with_attempts(url: str, download_source: str, timeout: int, parser: Callable[[bytes], Any]) -> Any:
     last_error: Optional[Exception] = None
-    for candidate in build_download_candidates(url, download_source):
+    attempts = build_download_attempts(url, download_source)
+    if not attempts:
+        raise RuntimeError("未提供可用下载地址。")
+
+    for attempt in attempts:
         try:
-            req = urllib.request.Request(candidate, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                return resp.read().decode("utf-8", errors="ignore")
+            req = urllib.request.Request(attempt.url, headers={"User-Agent": USER_AGENT})
+            started_at = time.monotonic()
+            with _open_request(req, attempt.route_code, timeout=timeout) as resp:
+                raw = resp.read()
+            _record_attempt_score(attempt, time.monotonic() - started_at)
+            return parser(raw)
         except Exception as exc:
             last_error = exc
-    raise RuntimeError(f"获取文本失败：{url}\n{last_error}")
+            _record_attempt_failure(attempt)
+    raise RuntimeError(f"获取内容失败：{url}\n{last_error}")
 
 
-def http_get_json(url: str, download_source: str, timeout: int = 45) -> Any:
-    last_error: Optional[Exception] = None
-    for candidate in build_download_candidates(url, download_source):
-        try:
-            req = urllib.request.Request(candidate, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                return json.loads(resp.read().decode("utf-8"))
-        except Exception as exc:
-            last_error = exc
-    raise RuntimeError(f"获取 JSON 失败：{url}\n{last_error}")
+def http_get_text(url: str, download_source: str, timeout: int = DEFAULT_METADATA_TIMEOUT_SECONDS) -> str:
+    return str(_fetch_with_attempts(url, download_source, timeout, lambda raw: raw.decode("utf-8", errors="ignore")))
+
+
+def http_get_json(url: str, download_source: str, timeout: int = DEFAULT_METADATA_TIMEOUT_SECONDS) -> Any:
+    return _fetch_with_attempts(url, download_source, timeout, lambda raw: json.loads(raw.decode("utf-8")))
 
 
 def http_download(
@@ -190,14 +408,18 @@ def http_download(
     destination: Path,
     download_source: str,
     reporter: Optional[DownloadStatsReporter] = None,
-    timeout: int = 120,
+    timeout: int = DEFAULT_DOWNLOAD_TIMEOUT_SECONDS,
+    display_name: Optional[str] = None,
+    log_callback: Optional[Callable[[str], None]] = None,
+    log_success: bool = True,
 ) -> None:
-    """下载单个文件，支持镜像回退、进度统计和原子替换。"""
+    """下载单个文件，支持镜像回退、直连/代理双路线、进度统计和原子替换。"""
     destination.parent.mkdir(parents=True, exist_ok=True)
-    candidates = build_download_candidates(urls, download_source)
-    if not candidates:
+    attempts = build_download_attempts(urls, download_source)
+    if not attempts:
         raise RuntimeError("未提供可用下载地址。")
 
+    file_label = display_name or destination.name
     temp_path = destination.with_name(destination.name + ".part")
     if temp_path.exists():
         temp_path.unlink()
@@ -209,29 +431,42 @@ def http_download(
             file_started = True
 
         last_error: Optional[Exception] = None
-        for candidate in candidates:
+        for index, attempt in enumerate(attempts, start=1):
             try:
-                req = urllib.request.Request(candidate, headers={"User-Agent": USER_AGENT})
-                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                req = urllib.request.Request(attempt.url, headers={"User-Agent": USER_AGENT})
+                started_at = time.monotonic()
+                first_chunk_at: Optional[float] = None
+                with _open_request(req, attempt.route_code, timeout=timeout) as resp:
                     with temp_path.open("wb") as fp:
                         while True:
                             chunk = resp.read(1024 * 1024)
                             if not chunk:
                                 break
+                            if first_chunk_at is None:
+                                first_chunk_at = time.monotonic()
                             fp.write(chunk)
                             if reporter is not None:
                                 reporter.add_bytes(len(chunk))
+                first_response_seconds = (first_chunk_at or time.monotonic()) - started_at
+                _record_attempt_score(attempt, first_response_seconds)
                 temp_path.replace(destination)
+                if log_callback is not None and log_success:
+                    log_callback(f"[下载成功] {file_label} | {attempt.display_label}")
                 if reporter is not None:
                     reporter.finish_file()
                     file_started = False
                 return
             except Exception as exc:
                 last_error = exc
+                _record_attempt_failure(attempt)
                 if temp_path.exists():
                     temp_path.unlink()
+                if log_callback is not None and index < len(attempts):
+                    log_callback(
+                        f"[切换下载路线] {file_label} | {attempt.display_label} 失败：{_format_exception_short(exc)}，改试下一条。"
+                    )
 
-        raise RuntimeError(f"下载失败：{candidates[0]}\n{last_error}")
+        raise RuntimeError(f"下载失败：{file_label}\n{_format_exception_short(last_error or RuntimeError('未知错误'))}")
     except Exception:
         if file_started and reporter is not None:
             reporter.fail_file()
