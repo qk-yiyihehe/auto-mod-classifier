@@ -128,25 +128,34 @@ class QtPageFactory:
         *,
         variant: str = "panel",
     ) -> tuple[QFrame, QVBoxLayout]:
-        card = QFrame(self.app)
-        apply_card_style(card, variant)
-        layout = QVBoxLayout(card)
+        # 外层透明容器，不设 border-radius 防止裁剪子控件弹出层
+        outer = QFrame(self.app)
+        outer.setStyleSheet("background: transparent; border: 0;")
+        outer_layout = QVBoxLayout(outer)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
+
+        # 内层做圆角背景
+        inner = QFrame(outer)
+        apply_card_style(inner, variant)
+        layout = QVBoxLayout(inner)
         layout.setContentsMargins(SPACING_MD + 2, SPACING_SM + 2, SPACING_MD + 2, SPACING_SM + 2)
         layout.setSpacing(SPACING_SM)
+        outer_layout.addWidget(inner)
 
-        title_label = StrongBodyLabel(title, card)
+        title_label = StrongBodyLabel(title, inner)
         title_label.setStyleSheet(
             f"color: {TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_BASE}px; font-weight: 600;"
         )
         layout.addWidget(title_label)
 
         if description:
-            desc = BodyLabel(description, card)
+            desc = BodyLabel(description, inner)
             desc.setWordWrap(True)
             apply_label_tone(desc, muted=True, size=FONT_SIZE_XS)
             layout.addWidget(desc)
 
-        return card, layout
+        return outer, layout
 
     def _build_download_source_combo(self, current: str = DOWNLOAD_SOURCE_SMART) -> ComboBox:
         combo = ComboBox(self.app)
