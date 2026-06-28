@@ -468,16 +468,23 @@ def apply_read_only_editor_style(editor: PlainTextEdit, *, console: bool = False
 
 
 def apply_input_style(widget: QWidget) -> None:
+    # 必须用具体选择器包裹，否则 Qt 会把这条没选择器的样式
+    # 当作"匹配所有 widget"，并通过 setStyleSheet 传到子 widget。
+    # ComboBox 弹出的 RoundMenu 会继承到 min-height/max-height: 34px，
+    # 把 popup 高度锁到 34px 只能显示一个 item。
+    # QLineEdit/QPushButton 已经覆盖了 LineEdit/ComboBox（含 qfluentwidgets 子类）。
     widget.setStyleSheet(
         f"""
-        background-color: {SURFACE_INPUT};
-        color: {TEXT_PRIMARY};
-        border: 1px solid {BORDER_DEFAULT};
-        border-radius: {RADIUS_MD}px;
-        padding: 0 12px;
-        min-height: 34px;
-        max-height: 34px;
-        font-size: {FONT_SIZE_SM}px;
+        QLineEdit, QPushButton {{
+            background-color: {SURFACE_INPUT};
+            color: {TEXT_PRIMARY};
+            border: 1px solid {BORDER_DEFAULT};
+            border-radius: {RADIUS_MD}px;
+            padding: 0 12px;
+            min-height: 34px;
+            max-height: 34px;
+            font-size: {FONT_SIZE_SM}px;
+        }}
         """
     )
 
