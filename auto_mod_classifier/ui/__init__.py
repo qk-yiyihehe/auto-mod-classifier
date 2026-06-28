@@ -1,3 +1,3 @@
-from .app import App, main
+from .qt_app import App, main
 
 __all__ = ["App", "main"]
