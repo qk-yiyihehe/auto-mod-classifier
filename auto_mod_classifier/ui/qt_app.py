@@ -46,7 +46,7 @@ from ..tasks import run_mod_task, run_server_task
 from .qt_dialogs import ChecklistDialog, VersionSelectionDialog
 from .qt_pages import QtPageFactory
 from .qt_state import HomeWidgets, ModInputWidgets, ReportSectionState, ServerInputWidgets, SettingsWidgets, TaskPanelState
-from .qt_theme import ACCENT_COLOR, APP_ICON_PATH, build_window_stylesheet
+from .qt_theme import ACCENT_COLOR, APP_ICON_PATH, build_window_stylesheet, refresh_themed_styles, set_palette
 from .qt_widgets import populate_result_row
 
 
@@ -158,7 +158,28 @@ class App(FluentWindow):
     def on_theme_changed(self, index: int) -> None:
         theme_map = {0: Theme.DARK, 1: Theme.LIGHT, 2: Theme.AUTO}
         theme = theme_map.get(index, Theme.DARK)
+        # 1) 同步切换自定义 palette
+        palette_name = {Theme.DARK: "dark", Theme.LIGHT: "light"}.get(theme, "dark")
+        from . import qt_theme as _qt_theme
+        _qt_theme.set_palette(palette_name)
+        # 2) 先调 qfluentwidgets setTheme，让内置组件（侧边栏/导航/标题栏）先刷一遍
         setTheme(theme)
+        # 3) 重新生成主窗口全局 QSS（背景、QMenu、按钮、输入框、表格等大块色值都靠它）
+        self.setStyleSheet(build_window_stylesheet())
+        # 4) 重设所有已通过 apply_themed_style 注册的子 widget 样式
+        refresh_themed_styles()
+        # 5) 强制刷新整个 widget tree，让所有控件重新应用样式
+        # 注意：只对 visible widget 调 polish，避免对离屏/隐藏 widget 触发昂贵的 layout pass
+        self.style().unpolish(self)
+        self.style().polish(self)
+        for child in self.findChildren(QWidget):
+            try:
+                if not child.isVisible():
+                    continue
+                child.style().unpolish(child)
+                child.style().polish(child)
+            except RuntimeError:
+                pass
 
     def choose_mod_folder(self) -> None:
         selected = QFileDialog.getExistingDirectory(self, "选择 mods 目录")

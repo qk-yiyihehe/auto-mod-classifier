@@ -27,30 +27,19 @@ from qfluentwidgets import (
     TitleLabel,
 )
 
+from . import qt_theme
 from .qt_theme import (
     ACCENT_BG_SOFT,
     ACCENT_BG_MEDIUM,
     ACCENT_COLOR,
     ACCENT_NORMAL,
-    BG_COLOR,
-    BG_CONTENT,
-    BORDER_DEFAULT,
-    BORDER_STRONG,
     ERROR_COLOR,
     IDLE_COLOR,
-    MUTED_TEXT_COLOR,
     RUNNING_COLOR,
-    SECONDARY_TEXT_COLOR,
     SUCCESS_COLOR,
-    SURFACE_CARD,
-    SURFACE_INPUT,
-    TEXT_COLOR,
-    TEXT_MUTED,
-    TEXT_PRIMARY,
-    TEXT_SECONDARY,
     WARNING_COLOR,
-    WEAK_BORDER_COLOR,
     apply_card_style,
+    apply_themed_style,
     install_shadow,
     FONT_SIZE_XS,
     FONT_SIZE_SM,
@@ -114,7 +103,7 @@ class ScrollablePage(ScrollArea):
 
         inner = QWidget(wrapper)
         inner.setObjectName(f"{page_key}Content")
-        inner.setStyleSheet(f"background-color: {BG_CONTENT};")
+        apply_themed_style(inner, lambda: f"background-color: {qt_theme.BG_CONTENT};")
         layout = QVBoxLayout(inner)
         layout.setContentsMargins(SPACING_LG, SPACING_MD, SPACING_LG, SPACING_LG)
         layout.setSpacing(SPACING_MD)
@@ -128,11 +117,13 @@ class ScrollablePage(ScrollArea):
         title_label = TitleLabel(title, header)
         subtitle_label = BodyLabel(subtitle, header)
         subtitle_label.setWordWrap(True)
-        title_label.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_XL}px; font-weight: 600;"
+        apply_themed_style(
+            title_label,
+            lambda: f"color: {qt_theme.TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_XL}px; font-weight: 600;",
         )
-        subtitle_label.setStyleSheet(
-            f"color: {TEXT_MUTED}; background: transparent; font-size: {FONT_SIZE_XS}px;"
+        apply_themed_style(
+            subtitle_label,
+            lambda: f"color: {qt_theme.TEXT_MUTED}; background: transparent; font-size: {FONT_SIZE_XS}px;",
         )
         header_layout.addWidget(title_label)
         header_layout.addWidget(subtitle_label)
@@ -153,7 +144,7 @@ class TaskPage(QWidget):
         super().__init__(parent)
         self.page_key = page_key
         self.setObjectName(page_key)
-        self.setStyleSheet(f"background-color: {BG_CONTENT};")
+        apply_themed_style(self, lambda: f"background-color: {qt_theme.BG_CONTENT};")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(SPACING_LG, SPACING_MD, SPACING_LG, SPACING_MD)
@@ -166,15 +157,17 @@ class TaskPage(QWidget):
         header_layout.setSpacing(2)
 
         title_label = TitleLabel(title, header)
-        title_label.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_XL}px; font-weight: 600;"
+        apply_themed_style(
+            title_label,
+            lambda: f"color: {qt_theme.TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_XL}px; font-weight: 600;",
         )
         header_layout.addWidget(title_label)
         if subtitle:
             sub = BodyLabel(subtitle, header)
             sub.setWordWrap(True)
-            sub.setStyleSheet(
-                f"color: {TEXT_MUTED}; background: transparent; font-size: {FONT_SIZE_XS}px;"
+            apply_themed_style(
+                sub,
+                lambda: f"color: {qt_theme.TEXT_MUTED}; background: transparent; font-size: {FONT_SIZE_XS}px;",
             )
             header_layout.addWidget(sub)
         layout.addWidget(header)
@@ -203,6 +196,7 @@ class StatusDot(QFrame):
     def set_state(self, state: str) -> None:
         color = self.STATE_COLORS.get(state, IDLE_COLOR)
         glow = f"rgba({int(QColor(color).red())}, {int(QColor(color).green())}, {int(QColor(color).blue())}, 0.18)"
+        # dot 颜色来自状态语义色 IDLE/RUNNING/...，本身与主题无关，每次状态切换重设即可
         self.setStyleSheet(
             f"""
             QFrame {{
@@ -247,16 +241,18 @@ class MetricCard(QFrame):
         # 数字
         self.value_label = TitleLabel(value, self)
         self.value_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.value_label.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_XXL}px; font-weight: 700;"
+        apply_themed_style(
+            self.value_label,
+            lambda: f"color: {qt_theme.TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_XXL}px; font-weight: 700;",
         )
         layout.addWidget(self.value_label)
 
         # 标签
         caption = BodyLabel(title, self)
         caption.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        caption.setStyleSheet(
-            f"color: {TEXT_MUTED}; background: transparent; font-size: {FONT_SIZE_XS}px;"
+        apply_themed_style(
+            caption,
+            lambda: f"color: {qt_theme.TEXT_MUTED}; background: transparent; font-size: {FONT_SIZE_XS}px;",
         )
         layout.addWidget(caption)
 
@@ -264,8 +260,9 @@ class MetricCard(QFrame):
         self.note_label = BodyLabel(note, self)
         self.note_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.note_label.setWordWrap(True)
-        self.note_label.setStyleSheet(
-            f"color: {TEXT_MUTED}; background: transparent; font-size: 10px;"
+        apply_themed_style(
+            self.note_label,
+            lambda: f"color: {qt_theme.TEXT_MUTED}; background: transparent; font-size: 10px;",
         )
         layout.addWidget(self.note_label)
         layout.addStretch()
@@ -300,8 +297,9 @@ class StageBoard(QFrame):
         layout.setSpacing(SPACING_SM)
 
         lbl = StrongBodyLabel(title, self)
-        lbl.setStyleSheet(
-            f"color: {TEXT_MUTED}; background: transparent; font-size: {FONT_SIZE_XS}px; text-transform: uppercase; letter-spacing: 0.5px;"
+        apply_themed_style(
+            lbl,
+            lambda: f"color: {qt_theme.TEXT_MUTED}; background: transparent; font-size: {FONT_SIZE_XS}px; text-transform: uppercase; letter-spacing: 0.5px;",
         )
         layout.addWidget(lbl)
 
@@ -334,7 +332,7 @@ class StageBoard(QFrame):
                 line = QFrame(track)
                 line.setFixedHeight(1)
                 line.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-                line.setStyleSheet(f"background-color: {BORDER_DEFAULT}; border: 0;")
+                apply_themed_style(line, lambda: f"background-color: {qt_theme.BORDER_DEFAULT}; border: 0;")
                 line_filler = QWidget(track)
                 filler_layout = QVBoxLayout(line_filler)
                 filler_layout.setContentsMargins(0, 11, 0, 0)
@@ -345,7 +343,10 @@ class StageBoard(QFrame):
 
         self.detail_label = BodyLabel("准备就绪", self)
         self.detail_label.setWordWrap(True)
-        self.detail_label.setStyleSheet(f"color: {TEXT_MUTED}; background: transparent; font-size: {FONT_SIZE_XS}px;")
+        apply_themed_style(
+            self.detail_label,
+            lambda: f"color: {qt_theme.TEXT_MUTED}; background: transparent; font-size: {FONT_SIZE_XS}px;",
+        )
         layout.addWidget(self.detail_label)
         self.reset()
 
@@ -402,43 +403,47 @@ class StageBoard(QFrame):
         if not isinstance(dot, QLabel) or not isinstance(title, QLabel):
             return
 
+        # 状态色：dot/line 用语义色（不随主题），title 文字用主题色
         if state == "running":
             dot_color = RUNNING_COLOR
-            title_color = TEXT_PRIMARY
             dot_bg = ACCENT_BG_MEDIUM
             line_color = RUNNING_COLOR
         elif state == "done":
             dot_color = SUCCESS_COLOR
-            title_color = TEXT_PRIMARY
             dot_bg = "rgba(61, 214, 140, 0.08)"
             line_color = SUCCESS_COLOR
         elif state == "error":
             dot_color = ERROR_COLOR
-            title_color = TEXT_PRIMARY
             dot_bg = "rgba(240, 71, 112, 0.10)"
             line_color = ERROR_COLOR
         else:
+            # pending
             dot_color = IDLE_COLOR
-            title_color = TEXT_MUTED
             dot_bg = "rgba(92, 101, 120, 0.08)"
-            line_color = BORDER_DEFAULT
+            line_color = IDLE_COLOR  # pending 时 line 也用 IDLE_COLOR，不依赖主题
 
-        dot.setStyleSheet(
-            f"""
-            color: {TEXT_PRIMARY if state != 'pending' else TEXT_MUTED};
+        apply_themed_style(
+            dot,
+            lambda: f"""
+            color: {getattr(qt_theme, 'TEXT_MUTED' if state == 'pending' else 'TEXT_PRIMARY')};
             background-color: {dot_bg};
             border: 1px solid {dot_color};
             border-radius: 12px;
             font-size: {FONT_SIZE_XS}px;
             font-weight: 600;
-            """
+            """,
         )
-        title.setStyleSheet(
-            f"color: {title_color}; background: transparent; font-size: {FONT_SIZE_XS}px; font-weight: 500;"
+        apply_themed_style(
+            title,
+            lambda: f"color: {getattr(qt_theme, 'TEXT_MUTED' if state == 'pending' else 'TEXT_PRIMARY')}; background: transparent; font-size: {FONT_SIZE_XS}px; font-weight: 500;",
         )
         line = row.get("line")
         if isinstance(line, QFrame):
-            line.setStyleSheet(f"background-color: {line_color}; border: 0;")
+            _lc = line_color
+            apply_themed_style(
+                line,
+                lambda: f"background-color: {_lc}; border: 0;",
+            )
         if state in {"running", "done", "error"}:
             _start_opacity_flash(dot, self, self._animations, start=0.65)
 
@@ -474,16 +479,18 @@ class ActionCard(QFrame):
             iw.setFixedSize(20, 20)
             header_row.addWidget(iw, 0, Qt.AlignTop)
         tl = StrongBodyLabel(title, self)
-        tl.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_MD}px; font-weight: 600;"
+        apply_themed_style(
+            tl,
+            lambda: f"color: {qt_theme.TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_MD}px; font-weight: 600;",
         )
         header_row.addWidget(tl, 1)
         layout.addLayout(header_row)
 
         dl = BodyLabel(description, self)
         dl.setWordWrap(True)
-        dl.setStyleSheet(
-            f"color: {TEXT_MUTED}; background: transparent; font-size: {FONT_SIZE_XS}px;"
+        apply_themed_style(
+            dl,
+            lambda: f"color: {qt_theme.TEXT_MUTED}; background: transparent; font-size: {FONT_SIZE_XS}px;",
         )
         layout.addWidget(dl)
         layout.addStretch(1)
@@ -534,19 +541,17 @@ def build_result_table(parent: QWidget) -> TableWidget:
     table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
     table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
     table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
-    table.setStyleSheet(
-        f"""
-        background-color: #0C131F;
-        alternate-background-color: #101826;
-        color: {TEXT_SECONDARY};
-        border: 1px solid {BORDER_DEFAULT};
+    apply_themed_style(table, lambda: f"""
+        background-color: {qt_theme.EDITOR_BG};
+        alternate-background-color: {qt_theme.TABLE_ROW_BG};
+        color: {qt_theme.TEXT_SECONDARY};
+        border: 1px solid {qt_theme.BORDER_DEFAULT};
         border-radius: {RADIUS_MD}px;
-        gridline-color: rgba(255, 255, 255, 0.03);
+        gridline-color: {qt_theme.SCROLL_HANDLE_BG};
         selection-background-color: {ACCENT_BG_MEDIUM};
-        selection-color: {TEXT_PRIMARY};
+        selection-color: {qt_theme.TEXT_PRIMARY};
         font-size: {FONT_SIZE_XS}px;
-        """
-    )
+""")
     return table
 
 

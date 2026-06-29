@@ -91,6 +91,5 @@ class SettingsWidgets:
     cache_path_edit: LineEdit
     cache_auto_cleanup_checkbox: CheckBox
     theme_combo: ComboBox
-    scale_combo: ComboBox
     detail_log_checkbox: CheckBox
     animation_checkbox: CheckBox

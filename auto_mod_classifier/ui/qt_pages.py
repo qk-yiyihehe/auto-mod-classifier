@@ -35,13 +35,10 @@ from .qt_state import (
     SettingsWidgets,
     TaskPanelState,
 )
+from . import qt_theme
 from .qt_theme import (
     ACCENT_BG_SOFT,
     ACCENT_NORMAL,
-    BG_CONTENT,
-    BORDER_DEFAULT,
-    BORDER_STRONG,
-    BORDER_SUBTLE,
     ERROR_COLOR,
     ERROR_SOFT_COLOR,
     FONT_SIZE_SM,
@@ -50,27 +47,20 @@ from .qt_theme import (
     FONT_SIZE_MD,
     FONT_SIZE_XL,
     INFO_COLOR,
-    MUTED_TEXT_COLOR,
     RADIUS_LG,
     RADIUS_MD,
-    SECONDARY_TEXT_COLOR,
     SPACING_LG,
     SPACING_MD,
     SPACING_SM,
     SPACING_XS,
     SPACING_XL,
     SUCCESS_COLOR,
-    SURFACE_ELEVATED,
-    SURFACE_INPUT,
-    TEXT_COLOR,
-    TEXT_MUTED,
-    TEXT_PRIMARY,
     WARNING_COLOR,
-    WEAK_BORDER_COLOR,
     apply_card_style,
     apply_input_style,
     apply_label_tone,
     apply_read_only_editor_style,
+    apply_themed_style,
 )
 from .qt_widgets import (
     ActionCard,
@@ -144,8 +134,9 @@ class QtPageFactory:
         outer_layout.addWidget(inner)
 
         title_label = StrongBodyLabel(title, inner)
-        title_label.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_BASE}px; font-weight: 600;"
+        apply_themed_style(
+            title_label,
+            lambda: f"color: {qt_theme.TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_BASE}px; font-weight: 600;",
         )
         layout.addWidget(title_label)
 
@@ -178,8 +169,9 @@ class QtPageFactory:
         row.setSpacing(SPACING_SM)
         title_label = BodyLabel(title, self.app)
         title_label.setFixedWidth(90)
-        title_label.setStyleSheet(
-            f"color: {SECONDARY_TEXT_COLOR}; background: transparent; font-size: {FONT_SIZE_XS}px;"
+        apply_themed_style(
+            title_label,
+            lambda: f"color: {qt_theme.SECONDARY_TEXT_COLOR}; background: transparent; font-size: {FONT_SIZE_XS}px;",
         )
         row.addWidget(title_label, 0, Qt.AlignVCenter)
         row.addWidget(control, 1)
@@ -261,8 +253,9 @@ class QtPageFactory:
         top_row.addWidget(status_dot, 0, Qt.AlignVCenter)
 
         stage_label = StrongBodyLabel("准备开始", card)
-        stage_label.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_MD}px; font-weight: 600;"
+        apply_themed_style(
+            stage_label,
+            lambda: f"color: {qt_theme.TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_MD}px; font-weight: 600;",
         )
         top_row.addWidget(stage_label, 1)
 
@@ -369,9 +362,10 @@ class QtPageFactory:
 
         # 三大入口卡片
         section_title = StrongBodyLabel("开始工作", page)
-        section_title.setStyleSheet(
-            f"color: {TEXT_MUTED}; background: transparent; font-size: {FONT_SIZE_XS}px;"
-            f"text-transform: uppercase; letter-spacing: 0.5px;"
+        apply_themed_style(
+            section_title,
+            lambda: f"color: {qt_theme.TEXT_MUTED}; background: transparent; font-size: {FONT_SIZE_XS}px;"
+            f"text-transform: uppercase; letter-spacing: 0.5px;",
         )
         page.container_layout.addWidget(section_title)
 
@@ -414,9 +408,10 @@ class QtPageFactory:
 
         # 最近状态
         status_title = StrongBodyLabel("最近状态", page)
-        status_title.setStyleSheet(
-            f"color: {TEXT_MUTED}; background: transparent; font-size: {FONT_SIZE_XS}px;"
-            f"text-transform: uppercase; letter-spacing: 0.5px;"
+        apply_themed_style(
+            status_title,
+            lambda: f"color: {qt_theme.TEXT_MUTED}; background: transparent; font-size: {FONT_SIZE_XS}px;"
+            f"text-transform: uppercase; letter-spacing: 0.5px;",
         )
         page.container_layout.addWidget(status_title)
 
@@ -433,8 +428,9 @@ class QtPageFactory:
         mod_gl.setContentsMargins(SPACING_MD + 2, SPACING_SM + 2, SPACING_MD + 2, SPACING_SM + 2)
         mod_status_dot = StatusDot(mod_card)
         mod_status_label = StrongBodyLabel("待运行", mod_card)
-        mod_status_label.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_MD}px; font-weight: 600;"
+        apply_themed_style(
+            mod_status_label,
+            lambda: f"color: {qt_theme.TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_MD}px; font-weight: 600;",
         )
         mod_time_label = BodyLabel("最近时间：暂无", mod_card)
         mod_output_label = BodyLabel("输出位置：暂无", mod_card)
@@ -468,8 +464,9 @@ class QtPageFactory:
         srv_gl.setContentsMargins(SPACING_MD + 2, SPACING_SM + 2, SPACING_MD + 2, SPACING_SM + 2)
         server_status_dot = StatusDot(server_card)
         server_status_label = StrongBodyLabel("待运行", server_card)
-        server_status_label.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_MD}px; font-weight: 600;"
+        apply_themed_style(
+            server_status_label,
+            lambda: f"color: {qt_theme.TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_MD}px; font-weight: 600;",
         )
         server_time_label = BodyLabel("最近时间：暂无", server_card)
         server_output_label = BodyLabel("输出位置：暂无", server_card)
@@ -803,8 +800,9 @@ class QtPageFactory:
         mod_sr.setSpacing(SPACING_SM)
         mod_sd = StatusDot(mod_card)
         mod_st = StrongBodyLabel("还没有最近结果", mod_card)
-        mod_st.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_MD}px; font-weight: 600;"
+        apply_themed_style(
+            mod_st,
+            lambda: f"color: {qt_theme.TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_MD}px; font-weight: 600;",
         )
         mod_sr.addWidget(mod_sd, 0, Qt.AlignVCenter)
         mod_sr.addWidget(mod_st, 1)
@@ -845,8 +843,9 @@ class QtPageFactory:
         sv_sr.setSpacing(SPACING_SM)
         sv_sd = StatusDot(sv_card)
         sv_st = StrongBodyLabel("还没有最近结果", sv_card)
-        sv_st.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_MD}px; font-weight: 600;"
+        apply_themed_style(
+            sv_st,
+            lambda: f"color: {qt_theme.TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_MD}px; font-weight: 600;",
         )
         sv_sr.addWidget(sv_sd, 0, Qt.AlignVCenter)
         sv_sr.addWidget(sv_st, 1)
@@ -985,12 +984,7 @@ class QtPageFactory:
         th_co.setCurrentIndex(0)
         th_co.currentIndexChanged.connect(self.app.on_theme_changed)
         self._add_control_row(i_l, "主题", th_co)
-        sc_co = ComboBox(i_card)
-        for t in ("100%", "110%", "125%"):
-            sc_co.addItem(t)
-        apply_input_style(sc_co)
-        sc_co.setMaxVisibleItems(3)
-        self._add_control_row(i_l, "缩放比例", sc_co)
+        # 缩放比例控件先移除：未实现任何缩放逻辑，避免误导
         dl_cb = CheckBox("显示详细日志", i_card)
         dl_cb.setChecked(True)
         an_cb = CheckBox("启用界面动效", i_card)
@@ -1028,7 +1022,6 @@ class QtPageFactory:
                 cache_path_edit=ca_edit,
                 cache_auto_cleanup_checkbox=ca_cb,
                 theme_combo=th_co,
-                scale_combo=sc_co,
                 detail_log_checkbox=dl_cb,
                 animation_checkbox=an_cb,
             ),
