@@ -60,7 +60,8 @@ class App(FluentWindow):
         self.ui_queue: "queue.Queue[dict[str, Any]]" = queue.Queue()
         self._pending_logs: Dict[str, List[str]] = {"mod": [], "server": []}
         self._runtime_ref: Any = None
-        self._theme_mode: Theme = qconfig.themeMode.value
+        # 当前版本没有持久化主题设置，默认值保持和设置页一致：深色。
+        self._theme_mode: Theme = Theme.DARK
 
         self.home_widgets: Optional[HomeWidgets] = None
         self.report_sections: Dict[str, ReportSectionState] = {}
@@ -859,7 +860,7 @@ def main() -> None:
         created_app = True
 
     app.setApplicationName(APP_TITLE)
-    setTheme(qconfig.themeMode.value)
+    setTheme(Theme.DARK)
     setThemeColor(QColor(ACCENT_COLOR))
 
     window = App()
