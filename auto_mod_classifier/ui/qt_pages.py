@@ -732,20 +732,6 @@ class QtPageFactory:
             prev_gl.addWidget(log_container)
         right_layout.addWidget(prev_card, 8)
 
-        # 额外按钮：打开日志目录
-        extra_btn = PushButton("打开日志目录", sc)
-        extra_btn.setObjectName("smallButton")
-        extra_btn.setEnabled(False)
-        extra_btn.clicked.connect(lambda: self.app.open_panel_path("server", "extra"))
-        sl = sc.layout()
-        if sl is not None:
-            last_item = sl.itemAt(sl.count() - 1)
-            al = last_item.layout() if last_item is not None else None
-            if isinstance(al, QHBoxLayout):
-                al.insertWidget(2, extra_btn)
-            else:
-                sl.addWidget(extra_btn, 0, Qt.AlignLeft)
-
         return ServerPageBuild(
             page=page,
             panel=TaskPanelState(
@@ -760,7 +746,7 @@ class QtPageFactory:
                 log_edit=srv_log,
                 start_button=start_btn,
                 result_button=srb,
-                extra_button=extra_btn,
+                extra_button=None,
                 metric_cards={
                     "server-keep": sm,
                     "client-only": sc,
