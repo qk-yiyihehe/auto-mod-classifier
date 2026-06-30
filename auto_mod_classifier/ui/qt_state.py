@@ -93,3 +93,5 @@ class SettingsWidgets:
     theme_combo: ComboBox
     detail_log_checkbox: CheckBox
     animation_checkbox: CheckBox
+    save_button: PushButton
+    reset_button: PushButton

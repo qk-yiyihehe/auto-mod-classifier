@@ -50,6 +50,23 @@ from .qt_state import HomeWidgets, ModInputWidgets, ReportSectionState, ServerIn
 from .qt_theme import ACCENT_COLOR, APP_ICON_PATH, build_window_stylesheet, refresh_themed_styles, set_palette
 from .qt_widgets import populate_result_row
 
+SETTINGS_FILE_PATH = Path(__file__).resolve().parents[2] / "auto_mod_classifier_settings.json"
+DEFAULT_UI_SETTINGS: Dict[str, Any] = {
+    "filter_download_source": DOWNLOAD_SOURCE_SMART,
+    "filter_use_mcmod": True,
+    "filter_use_curseforge": False,
+    "filter_second_pass": False,
+    "filter_manual_review": True,
+    "server_output_path": "",
+    "server_download_source": DOWNLOAD_SOURCE_SMART,
+    "java_rule_index": 0,
+    "cache_path": "",
+    "cache_auto_cleanup": True,
+    "theme_index": 0,
+    "detail_log": True,
+    "animation": True,
+}
+
 
 class App(FluentWindow):
     """主窗口控制器，只负责任务编排、事件回写和页面切换。"""
@@ -60,8 +77,8 @@ class App(FluentWindow):
         self.ui_queue: "queue.Queue[dict[str, Any]]" = queue.Queue()
         self._pending_logs: Dict[str, List[str]] = {"mod": [], "server": []}
         self._runtime_ref: Any = None
-        # 当前版本没有持久化主题设置，默认值保持和设置页一致：深色。
-        self._theme_mode: Theme = Theme.DARK
+        self._settings_data = self._load_settings_data()
+        self._theme_mode: Theme = self._theme_from_index(int(self._settings_data.get("theme_index", 0)))
 
         self.home_widgets: Optional[HomeWidgets] = None
         self.report_sections: Dict[str, ReportSectionState] = {}
@@ -75,6 +92,7 @@ class App(FluentWindow):
 
         self._build_window()
         self._build_pages()
+        self._apply_settings_to_widgets()
         self._apply_theme_visuals(self._theme_mode, sync_fluent_theme=False)
         self._refresh_home_overview()
         self._refresh_report_sections()
@@ -184,6 +202,79 @@ class App(FluentWindow):
         color_scheme = app.styleHints().colorScheme()
         return Theme.DARK if color_scheme == Qt.ColorScheme.Dark else Theme.LIGHT
 
+    def _theme_from_index(self, index: int) -> Theme:
+        theme_map = {0: Theme.DARK, 1: Theme.LIGHT, 2: Theme.AUTO}
+        return theme_map.get(index, Theme.DARK)
+
+    def _load_settings_data(self) -> Dict[str, Any]:
+        data = dict(DEFAULT_UI_SETTINGS)
+        if not SETTINGS_FILE_PATH.exists():
+            return data
+        try:
+            raw = json.loads(SETTINGS_FILE_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            return data
+        if not isinstance(raw, dict):
+            return data
+        data.update(raw)
+        return data
+
+    def _save_settings_data(self, data: Dict[str, Any]) -> None:
+        SETTINGS_FILE_PATH.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+    def _set_combo_by_data(self, combo: ComboBox, value: str, fallback_index: int = 0) -> None:
+        for index in range(combo.count()):
+            if combo.itemData(index) == value:
+                combo.setCurrentIndex(index)
+                return
+        combo.setCurrentIndex(fallback_index)
+
+    def _apply_settings_to_widgets(self) -> None:
+        settings_widgets = self._require_settings_widgets()
+        data = self._settings_data
+        self._set_combo_by_data(
+            settings_widgets.filter_download_source_combo,
+            str(data.get("filter_download_source", DOWNLOAD_SOURCE_SMART)),
+        )
+        settings_widgets.filter_use_mcmod_checkbox.setChecked(bool(data.get("filter_use_mcmod", True)))
+        settings_widgets.filter_use_cf_checkbox.setChecked(bool(data.get("filter_use_curseforge", False)))
+        settings_widgets.filter_second_pass_checkbox.setChecked(bool(data.get("filter_second_pass", False)))
+        settings_widgets.filter_manual_review_checkbox.setChecked(bool(data.get("filter_manual_review", True)))
+        settings_widgets.server_output_path_edit.setText(str(data.get("server_output_path", "")))
+        self._set_combo_by_data(
+            settings_widgets.server_download_source_combo,
+            str(data.get("server_download_source", DOWNLOAD_SOURCE_SMART)),
+        )
+        java_rule_index = int(data.get("java_rule_index", 0))
+        settings_widgets.java_rule_combo.setCurrentIndex(max(0, min(java_rule_index, settings_widgets.java_rule_combo.count() - 1)))
+        settings_widgets.cache_path_edit.setText(str(data.get("cache_path", "")))
+        settings_widgets.cache_auto_cleanup_checkbox.setChecked(bool(data.get("cache_auto_cleanup", True)))
+        theme_index = int(data.get("theme_index", 0))
+        settings_widgets.theme_combo.setCurrentIndex(max(0, min(theme_index, settings_widgets.theme_combo.count() - 1)))
+        settings_widgets.detail_log_checkbox.setChecked(bool(data.get("detail_log", True)))
+        settings_widgets.animation_checkbox.setChecked(bool(data.get("animation", True)))
+
+    def _collect_settings_data(self) -> Dict[str, Any]:
+        settings_widgets = self._require_settings_widgets()
+        return {
+            "filter_download_source": self.resolve_download_source(settings_widgets.filter_download_source_combo),
+            "filter_use_mcmod": settings_widgets.filter_use_mcmod_checkbox.isChecked(),
+            "filter_use_curseforge": settings_widgets.filter_use_cf_checkbox.isChecked(),
+            "filter_second_pass": settings_widgets.filter_second_pass_checkbox.isChecked(),
+            "filter_manual_review": settings_widgets.filter_manual_review_checkbox.isChecked(),
+            "server_output_path": settings_widgets.server_output_path_edit.text().strip(),
+            "server_download_source": self.resolve_download_source(settings_widgets.server_download_source_combo),
+            "java_rule_index": settings_widgets.java_rule_combo.currentIndex(),
+            "cache_path": settings_widgets.cache_path_edit.text().strip(),
+            "cache_auto_cleanup": settings_widgets.cache_auto_cleanup_checkbox.isChecked(),
+            "theme_index": settings_widgets.theme_combo.currentIndex(),
+            "detail_log": settings_widgets.detail_log_checkbox.isChecked(),
+            "animation": settings_widgets.animation_checkbox.isChecked(),
+        }
+
     def _apply_theme_visuals(self, theme_mode: Theme, *, sync_fluent_theme: bool) -> None:
         effective_theme = self._resolve_effective_theme(theme_mode)
         palette_name = "dark" if effective_theme == Theme.DARK else "light"
@@ -216,8 +307,7 @@ class App(FluentWindow):
         self._apply_theme_visuals(Theme.AUTO, sync_fluent_theme=True)
 
     def on_theme_changed(self, index: int) -> None:
-        theme_map = {0: Theme.DARK, 1: Theme.LIGHT, 2: Theme.AUTO}
-        theme = theme_map.get(index, Theme.DARK)
+        theme = self._theme_from_index(index)
         self._theme_mode = theme
         # 1) 同步切换自定义 palette（背景/卡片/边框/文字/卡片悬浮等）
         # 2) 重新生成主窗口全局 QSS（背景、QMenu、按钮、输入框、表格等大块色值都靠它）
@@ -229,6 +319,33 @@ class App(FluentWindow):
         #    信号真正触发动画 _结束_ 之前，让 backgroundColor 切到对的色。
         # 4) 再调 qfluentwidgets setTheme，让内置组件（侧边栏/导航/标题栏）刷一遍
         self._apply_theme_visuals(theme, sync_fluent_theme=True)
+
+    def save_settings(self) -> None:
+        self._settings_data = self._collect_settings_data()
+        self._save_settings_data(self._settings_data)
+        self._theme_mode = self._theme_from_index(int(self._settings_data.get("theme_index", 0)))
+        self._apply_theme_visuals(self._theme_mode, sync_fluent_theme=True)
+        InfoBar.success(
+            "设置已保存",
+            "当前设置已经保存，下次启动会继续使用这些值。",
+            duration=2500,
+            position=InfoBarPosition.TOP_RIGHT,
+            parent=self,
+        )
+
+    def reset_settings(self) -> None:
+        self._settings_data = dict(DEFAULT_UI_SETTINGS)
+        self._apply_settings_to_widgets()
+        self._theme_mode = self._theme_from_index(int(self._settings_data.get("theme_index", 0)))
+        self._apply_theme_visuals(self._theme_mode, sync_fluent_theme=True)
+        self._save_settings_data(self._settings_data)
+        InfoBar.success(
+            "设置已重置",
+            "设置已经恢复默认值，并已立即保存。",
+            duration=2500,
+            position=InfoBarPosition.TOP_RIGHT,
+            parent=self,
+        )
 
     def choose_mod_folder(self) -> None:
         selected = QFileDialog.getExistingDirectory(self, "选择 mods 目录")
@@ -860,7 +977,16 @@ def main() -> None:
         created_app = True
 
     app.setApplicationName(APP_TITLE)
-    setTheme(Theme.DARK)
+    startup_settings = dict(DEFAULT_UI_SETTINGS)
+    if SETTINGS_FILE_PATH.exists():
+        try:
+            raw = json.loads(SETTINGS_FILE_PATH.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                startup_settings.update(raw)
+        except Exception:
+            pass
+    theme_index = int(startup_settings.get("theme_index", DEFAULT_UI_SETTINGS["theme_index"]))
+    setTheme({0: Theme.DARK, 1: Theme.LIGHT, 2: Theme.AUTO}.get(theme_index, Theme.DARK))
     setThemeColor(QColor(ACCENT_COLOR))
 
     window = App()

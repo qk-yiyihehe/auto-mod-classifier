@@ -991,6 +991,12 @@ class QtPageFactory:
         an_cb.setChecked(True)
         i_l.addWidget(dl_cb)
         i_l.addWidget(an_cb)
+        save_btn = PrimaryPushButton("保存设置", i_card)
+        save_btn.clicked.connect(self.app.save_settings)
+        i_l.addWidget(save_btn, 0, Qt.AlignLeft)
+        reset_btn = PushButton("恢复默认", i_card)
+        reset_btn.clicked.connect(self.app.reset_settings)
+        i_l.addWidget(reset_btn, 0, Qt.AlignLeft)
 
         # 关于
         a_card, a_l = self._create_card("关于", variant="subtle")
@@ -1024,5 +1030,7 @@ class QtPageFactory:
                 theme_combo=th_co,
                 detail_log_checkbox=dl_cb,
                 animation_checkbox=an_cb,
+                save_button=save_btn,
+                reset_button=reset_btn,
             ),
         )
