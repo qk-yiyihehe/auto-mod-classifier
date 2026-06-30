@@ -42,6 +42,7 @@ class ReportSectionState:
     summary_edit: PlainTextEdit
     result_button: PushButton
     extra_button: Optional[PushButton]
+    log_edit: Optional[PlainTextEdit] = None
     empty_state_widget: Optional[QWidget] = None
     empty_state_title: Optional[StrongBodyLabel] = None
     empty_state_body: Optional[BodyLabel] = None

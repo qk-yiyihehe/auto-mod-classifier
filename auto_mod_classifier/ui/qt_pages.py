@@ -45,7 +45,6 @@ from .qt_theme import (
     FONT_SIZE_XS,
     FONT_SIZE_BASE,
     FONT_SIZE_MD,
-    FONT_SIZE_LG,
     FONT_SIZE_XL,
     INFO_COLOR,
     RADIUS_LG,
@@ -824,31 +823,11 @@ class QtPageFactory:
             """,
         )
 
-        mod_empty = QWidget(mod_card)
-        mod_empty_layout = QVBoxLayout(mod_empty)
-        mod_empty_layout.setContentsMargins(0, 0, 0, 0)
-        mod_empty_layout.setSpacing(SPACING_XS)
-        mod_empty_title = StrongBodyLabel("还没有可预览的模组结果", mod_empty)
-        apply_themed_style(
-            mod_empty_title,
-            lambda: f"color: {qt_theme.TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_LG}px; font-weight: 600;",
-        )
-        mod_empty_body = BodyLabel("先去“模组筛选”页面运行一次脚本。完成后，这里会自动铺开显示文件名、分类结果、判定来源和判定原因。", mod_empty)
-        mod_empty_body.setWordWrap(True)
-        apply_themed_style(
-            mod_empty_body,
-            lambda: f"color: {qt_theme.TEXT_SECONDARY}; background: transparent; font-size: {FONT_SIZE_XS}px; line-height: 1.6;",
-        )
-        mod_empty_layout.addStretch(1)
-        mod_empty_layout.addWidget(mod_empty_title)
-        mod_empty_layout.addWidget(mod_empty_body)
-        mod_empty_layout.addStretch(1)
-
         mod_preview = QWidget(mod_card)
         mod_preview_layout = QVBoxLayout(mod_preview)
         mod_preview_layout.setContentsMargins(0, 0, 0, 0)
         mod_preview_layout.setSpacing(SPACING_SM)
-        mod_hint = BodyLabel("默认按待确认和关键条目优先展示，点击文件名可直接复制。", mod_preview)
+        mod_hint = BodyLabel("还没有开始模组筛选。先运行一次脚本，完成后这里会自动显示真实结果。", mod_preview)
         mod_hint.setWordWrap(True)
         apply_themed_style(
             mod_hint,
@@ -859,13 +838,25 @@ class QtPageFactory:
         enable_filename_copy(mod_table, mod_hint)
         mod_preview_layout.addWidget(mod_hint)
         mod_preview_layout.addWidget(mod_table, 1)
-        mod_preview.setVisible(False)
+
+        log_title = StrongBodyLabel("实时日志", mod_card)
+        apply_themed_style(
+            log_title,
+            lambda: f"color: {qt_theme.TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_MD}px; font-weight: 600;",
+        )
+        report_log = PlainTextEdit(mod_card)
+        report_log.setReadOnly(True)
+        report_log.setMaximumBlockCount(1500)
+        report_log.setMinimumHeight(220)
+        report_log.setPlainText("等待任务开始。")
+        apply_read_only_editor_style(report_log, console=True)
 
         mod_l.addLayout(mod_sr)
         mod_l.addWidget(mod_tm)
         mod_l.addWidget(mod_sum)
-        mod_l.addWidget(mod_empty, 1)
         mod_l.addWidget(mod_preview, 1)
+        mod_l.addWidget(log_title)
+        mod_l.addWidget(report_log, 1)
 
         mod_br = QHBoxLayout()
         mod_br.addStretch(1)
@@ -956,11 +947,12 @@ class QtPageFactory:
                     status_label=mod_st,
                     time_label=mod_tm,
                     summary_edit=mod_sum,
+                    log_edit=report_log,
                     result_button=mrb,
                     extra_button=None,
-                    empty_state_widget=mod_empty,
-                    empty_state_title=mod_empty_title,
-                    empty_state_body=mod_empty_body,
+                    empty_state_widget=None,
+                    empty_state_title=None,
+                    empty_state_body=None,
                     preview_widget=mod_preview,
                     preview_table=mod_table,
                     preview_hint_label=mod_hint,
@@ -970,6 +962,7 @@ class QtPageFactory:
                     status_label=sv_st,
                     time_label=sv_tm,
                     summary_edit=sv_sum,
+                    log_edit=None,
                     result_button=srb,
                     extra_button=seb,
                 ),
