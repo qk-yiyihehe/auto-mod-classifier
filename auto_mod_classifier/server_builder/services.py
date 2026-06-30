@@ -1151,7 +1151,7 @@ class ServerWorkflowService:
         mod_results: Optional[List[Dict[str, Any]]] = None
         directory_summary: Optional[List[Dict[str, Any]]] = None
         try:
-            self.common.set_stage(TaskStage.PRECHECK, 2, "校验目录")
+            self.common.set_stage(TaskStage.PRECHECK, 2, "正在检查输入和输出目录")
             if not client_dir.exists() or not client_dir.is_dir():
                 raise RuntimeError("客户端目录不存在。")
             if output_root.exists():
@@ -1167,11 +1167,11 @@ class ServerWorkflowService:
             if client_resolved == output_resolved or self.common.is_same_or_nested_path(client_resolved, output_resolved):
                 raise RuntimeError("服务端输出目录不能与客户端目录相同，也不能位于客户端目录内部。")
 
-            self.common.set_stage(TaskStage.CLIENT_SCAN, 10, "识别客户端实例根目录")
+            self.common.set_stage(TaskStage.CLIENT_SCAN, 10, "正在识别客户端根目录")
             game_root = self.versioning.normalize_client_root(client_dir)
             self.common.log_line(f"客户端实例根目录：{game_root}")
 
-            self.common.set_stage(TaskStage.CLIENT_SCAN, 18, "扫描版本清单")
+            self.common.set_stage(TaskStage.CLIENT_SCAN, 18, "正在读取版本信息")
             candidates = self.versioning.find_version_candidates(game_root)
             chosen = self.versioning.choose_version_candidate(candidates)
             self.common.log_line(f"目标版本：{chosen.display_name} | 版本清单 Java {chosen.java_major}")
@@ -1179,19 +1179,19 @@ class ServerWorkflowService:
                 raise RuntimeError("检测到 Quilt 客户端，3.00 的一键制作服务端模式暂不支持 Quilt。")
 
             required_java_major = self.java.get_required_java_major(chosen)
-            self.common.set_stage(TaskStage.PRECHECK, 24, f"匹配 Java {required_java_major}")
+            self.common.set_stage(TaskStage.PRECHECK, 24, f"正在匹配 Java {required_java_major}")
             java_runtime = self.java.ensure_java(client_dir, game_root, chosen)
             self.common.log_line(f"Minecraft {chosen.minecraft_version} 需要 Java {required_java_major}")
             self.common.log_line(f"已选 Java：{java_runtime.summary} | 来源：{java_runtime.source}")
 
-            self.common.set_stage(TaskStage.DOWNLOAD_INSTALLER, 26, "解析官方安装器地址")
+            self.common.set_stage(TaskStage.DOWNLOAD_INSTALLER, 26, "正在解析安装器地址")
             installer_spec = self.versioning.resolve_installer_spec(chosen)
             installer_path = self.install.download_installer(installer_spec, temp_workspace)
 
-            self.common.set_stage(TaskStage.INSTALL_SERVER, 40, "安装服务端")
+            self.common.set_stage(TaskStage.INSTALL_SERVER, 40, "正在安装服务端核心")
             self.install.install_server(output_root, chosen, installer_path, java_runtime)
 
-            self.common.set_stage(TaskStage.CLASSIFY_MODS, 52, "分析客户端 mods")
+            self.common.set_stage(TaskStage.CLASSIFY_MODS, 52, "正在筛选客户端模组")
             mod_results = self.install.classify_mod_directory(game_root / "mods")
             mod_review_items = self.mods.build_mod_review_items(mod_results)
             if mod_review_items:
@@ -1206,11 +1206,11 @@ class ServerWorkflowService:
                 selected_mod_keys = []
                 self.common.log_line("客户端 mods 目录中没有需要复制的模组。")
 
-            self.common.set_stage(TaskStage.COPY_MODS, 63, "复制服务端模组")
+            self.common.set_stage(TaskStage.COPY_MODS, 63, "正在复制服务端模组")
             copied_mods = self.mods.copy_selected_mods(mod_results, selected_mod_keys, output_root / "mods")
             self.common.log_line(f"已复制 {copied_mods} 个模组到服务端。")
 
-            self.common.set_stage(TaskStage.COPY_CONFIGS, 72, "收集配置目录候选")
+            self.common.set_stage(TaskStage.COPY_CONFIGS, 72, "正在整理配置目录候选")
             config_review_items = self.mods.enumerate_copyable_directories(game_root)
             if config_review_items:
                 selected_directories = self.runtime.request_checklist(
@@ -1224,24 +1224,24 @@ class ServerWorkflowService:
                 selected_directories = []
                 self.common.log_line("没有可复制的顶层配置目录。")
 
-            self.common.set_stage(TaskStage.COPY_CONFIGS, 78, "复制配置目录")
+            self.common.set_stage(TaskStage.COPY_CONFIGS, 78, "正在复制配置目录")
             directory_summary = self.mods.copy_selected_directories(game_root, output_root, selected_directories)
             self.common.log_line(f"已复制 {sum(1 for row in directory_summary if row['Copied'])} 个目录到服务端。")
 
-            self.common.set_stage(TaskStage.PREPARE_LAUNCH, 84, "生成统一启动脚本")
+            self.common.set_stage(TaskStage.PREPARE_LAUNCH, 84, "正在生成启动脚本")
             copied_mod_count = sum(1 for row in mod_results if row.get("SelectedForServer"))
             xms, xmx = self.launch.estimate_memory_settings(copied_mod_count)
             self.common.log_line(f"按 {copied_mod_count} 个模组分配内存：Xms={xms}, Xmx={xmx}")
             launch_scripts = self.launch.write_launch_scripts(output_root, chosen, xms, xmx, java_runtime)
 
-            self.common.set_stage(TaskStage.FIRST_BOOT, 89, "首次启动生成服务器配置")
+            self.common.set_stage(TaskStage.FIRST_BOOT, 89, "正在首次启动并生成配置")
             self.launch.run_server_script(output_root, launch_scripts.internal_script, "init")
 
-            self.common.set_stage(TaskStage.PATCH_CONFIG, 93, "写入 eula 与 server.properties")
+            self.common.set_stage(TaskStage.PATCH_CONFIG, 93, "正在写入服务器配置")
             self.launch.set_eula_true(output_root)
             self.launch.set_online_mode_false(output_root)
 
-            self.common.set_stage(TaskStage.VERIFY_BOOT, 97, "第二次启动验证")
+            self.common.set_stage(TaskStage.VERIFY_BOOT, 97, "正在进行第二次启动验证")
             self.launch.run_server_script(output_root, launch_scripts.internal_script, "verify")
 
             report_dir.mkdir(parents=True, exist_ok=True)
@@ -1249,7 +1249,7 @@ class ServerWorkflowService:
             self.reporting.write_directory_summary(report_dir, directory_summary)
             _, install_log_path = self.reporting.write_logs(report_dir)
 
-            self.common.set_stage(TaskStage.COMPLETE, 100, "服务端制作完成")
+            self.common.set_stage(TaskStage.COMPLETE, 100, "服务端制作完成，正在收尾")
             return {
                 "server_root": output_root,
                 "report_dir": report_dir,
