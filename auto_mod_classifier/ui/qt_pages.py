@@ -704,12 +704,12 @@ class QtPageFactory:
         )
         metric_row = QHBoxLayout()
         metric_row.setSpacing(SPACING_SM)
-        sm = MetricCard("服务端保留", "--", "识别为服务端可用", accent_color=INFO_COLOR)
-        sc = MetricCard("纯客户端", "--", "识别为仅客户端", accent_color=SUCCESS_COLOR)
-        sx = MetricCard("最终复制", "--", "实际进入服务端", accent_color=WARNING_COLOR)
-        metric_row.addWidget(sm, 1)
-        metric_row.addWidget(sc, 1)
-        metric_row.addWidget(sx, 1)
+        metric_keep = MetricCard("服务端保留", "--", "识别为服务端可用", accent_color=INFO_COLOR)
+        metric_client = MetricCard("纯客户端", "--", "识别为仅客户端", accent_color=SUCCESS_COLOR)
+        metric_final = MetricCard("最终复制", "--", "实际进入服务端", accent_color=WARNING_COLOR)
+        metric_row.addWidget(metric_keep, 1)
+        metric_row.addWidget(metric_client, 1)
+        metric_row.addWidget(metric_final, 1)
         bl = board.layout()
         if isinstance(bl, QVBoxLayout):
             bl.addLayout(metric_row)
@@ -724,7 +724,7 @@ class QtPageFactory:
         left_layout.addWidget(start_btn)
 
         (
-            sc, ssd, ssl, sstat, spb, spv, sdl, sol, srb, _srp,
+            status_card, ssd, ssl, sstat, spb, spv, sdl, sol, srb, _srp,
         ) = self._build_status_card(
             "运行状态", "选择输入源和输出目录后开始制作。",
             "打开服务端目录",
@@ -732,7 +732,7 @@ class QtPageFactory:
             lambda: self.app.open_page(self.app.report_page),
             parent=right_col,
         )
-        right_layout.addWidget(sc, 1)
+        right_layout.addWidget(status_card, 1)
 
         prev_card, prev_gl = self._create_card("实时日志", "只显示制作过程中的真实滚动日志。")
         prev_card.setParent(right_col)
@@ -761,9 +761,9 @@ class QtPageFactory:
                 result_button=srb,
                 extra_button=None,
                 metric_cards={
-                    "server-keep": sm,
-                    "client-only": sc,
-                    "final-copy": sx,
+                    "server-keep": metric_keep,
+                    "client-only": metric_client,
+                    "final-copy": metric_final,
                 },
                 stage_board=board,
             ),
