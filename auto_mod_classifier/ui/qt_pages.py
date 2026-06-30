@@ -240,7 +240,7 @@ class QtPageFactory:
         parent: QWidget,
     ) -> tuple[
         QFrame, StatusDot, StrongBodyLabel, BodyLabel, ProgressBar,
-        BodyLabel, BodyLabel, PushButton, PushButton,
+        BodyLabel, BodyLabel, BodyLabel, PushButton, PushButton,
     ]:
         card, layout = self._create_card(title)
         card.setParent(parent)
@@ -264,6 +264,13 @@ class QtPageFactory:
         progress_bar.setValue(0)
         progress_bar.setFixedWidth(120)
         top_row.addWidget(progress_bar, 0, Qt.AlignVCenter)
+
+        progress_value_label = BodyLabel("0%", card)
+        apply_themed_style(
+            progress_value_label,
+            lambda: f"color: {qt_theme.TEXT_MUTED}; background: transparent; font-size: {FONT_SIZE_XS}px; font-weight: 600;",
+        )
+        top_row.addWidget(progress_value_label, 0, Qt.AlignVCenter)
         layout.addLayout(top_row)
 
         # 中行：状态文字
@@ -302,53 +309,9 @@ class QtPageFactory:
         layout.addLayout(btn_row)
 
         return (
-            card, status_dot, stage_label, status_label, progress_bar,
+            card, status_dot, stage_label, status_label, progress_bar, progress_value_label,
             dl, ol, result_button, report_button,
         )
-
-    def _build_log_pages(
-        self,
-        parent: QWidget,
-        *,
-        with_result_table: bool,
-    ) -> tuple[QWidget, PlainTextEdit, PlainTextEdit, QWidget | None, BodyLabel | None]:
-        summary_page = QWidget(parent)
-        summary_layout = QVBoxLayout(summary_page)
-        summary_layout.setContentsMargins(0, 0, 0, 0)
-        summary_edit = PlainTextEdit(summary_page)
-        summary_edit.setReadOnly(True)
-        summary_edit.setMaximumBlockCount(500)
-        summary_edit.setPlainText("任务完成后显示摘要。")
-        apply_read_only_editor_style(summary_edit)
-        summary_layout.addWidget(summary_edit)
-
-        log_page = QWidget(parent)
-        log_layout = QVBoxLayout(log_page)
-        log_layout.setContentsMargins(0, 0, 0, 0)
-        log_edit = PlainTextEdit(log_page)
-        log_edit.setReadOnly(True)
-        log_edit.setMaximumBlockCount(1500)
-        log_edit.setPlainText("等待任务开始。")
-        apply_read_only_editor_style(log_edit, console=True)
-        log_layout.addWidget(log_edit)
-
-        if not with_result_table:
-            return log_page, summary_edit, log_edit, None, None
-
-        result_page = QWidget(parent)
-        result_layout = QVBoxLayout(result_page)
-        result_layout.setContentsMargins(0, 0, 0, 0)
-        result_layout.setSpacing(SPACING_SM)
-
-        hint_label = BodyLabel("结果将在任务完成后展示。", result_page)
-        hint_label.setWordWrap(True)
-        apply_label_tone(hint_label, muted=True, size=FONT_SIZE_XS)
-        result_layout.addWidget(hint_label)
-
-        result_table = build_result_table(result_page)
-        result_layout.addWidget(result_table, 1)
-
-        return result_page, summary_edit, log_edit, result_table, hint_label
 
     # ═══════════════════════════════════════════
     # 工作台
@@ -580,7 +543,7 @@ class QtPageFactory:
 
         # — 右侧：状态 + 日志（扩大日志区域）—
         (
-            sc, msd, msl, mstat, mpb, mdl, mol, mrb, _mrp,
+            sc, msd, msl, mstat, mpb, mpv, mdl, mol, mrb, _mrp,
         ) = self._build_status_card(
             "运行状态", "选择输入源后开始筛选。",
             "打开结果目录",
@@ -590,20 +553,21 @@ class QtPageFactory:
         )
         right_layout.addWidget(sc, 1)
 
-        prev_card, prev_gl = self._create_card("实时日志", "只保留真实滚动日志，方便盯住当前进度。")
-        prev_card.setParent(right_col)
-        result_page, mod_summary, mod_log, mod_table, mod_hint = self._build_log_pages(
-            prev_card, with_result_table=True,
-        )
-        result_page.hide()
-        mod_summary.parentWidget().hide()
-        log_container = mod_log.parentWidget()
-        if log_container is not None:
-            prev_gl.addWidget(log_container)
-        right_layout.addWidget(prev_card, 8)
+        mod_summary = PlainTextEdit(right_col)
+        mod_summary.setReadOnly(True)
+        mod_summary.setMaximumBlockCount(500)
+        mod_summary.setPlainText("任务完成后显示摘要。")
+        mod_summary.hide()
 
-        assert mod_table is not None
-        assert mod_hint is not None
+        mod_log = PlainTextEdit(right_col)
+        mod_log.setReadOnly(True)
+        mod_log.setMaximumBlockCount(1500)
+        mod_log.setPlainText("等待任务开始。")
+        mod_log.hide()
+
+        mod_table = build_result_table(right_col)
+        mod_hint = BodyLabel("结果将在任务完成后展示。", right_col)
+        mod_hint.hide()
         return ModPageBuild(
             page=page,
             panel=TaskPanelState(
@@ -611,6 +575,7 @@ class QtPageFactory:
                 stage_label=msl,
                 status_label=mstat,
                 progress_bar=mpb,
+                progress_value_label=mpv,
                 download_label=mdl,
                 output_label=mol,
                 summary_edit=mod_summary,
@@ -703,7 +668,7 @@ class QtPageFactory:
         left_layout.addWidget(start_btn)
 
         (
-            sc, ssd, ssl, sstat, spb, sdl, sol, srb, _srp,
+            sc, ssd, ssl, sstat, spb, spv, sdl, sol, srb, _srp,
         ) = self._build_status_card(
             "运行状态", "选择输入源和输出目录后开始制作。",
             "打开服务端目录",
@@ -713,16 +678,17 @@ class QtPageFactory:
         )
         right_layout.addWidget(sc, 1)
 
-        prev_card, prev_gl = self._create_card("实时日志", "只显示制作过程中的真实滚动日志。")
-        prev_card.setParent(right_col)
-        _, srv_summary, srv_log, _, _ = self._build_log_pages(
-            prev_card, with_result_table=False,
-        )
-        srv_summary.parentWidget().hide()
-        log_container = srv_log.parentWidget()
-        if log_container is not None:
-            prev_gl.addWidget(log_container)
-        right_layout.addWidget(prev_card, 8)
+        srv_summary = PlainTextEdit(right_col)
+        srv_summary.setReadOnly(True)
+        srv_summary.setMaximumBlockCount(500)
+        srv_summary.setPlainText("任务完成后显示摘要。")
+        srv_summary.hide()
+
+        srv_log = PlainTextEdit(right_col)
+        srv_log.setReadOnly(True)
+        srv_log.setMaximumBlockCount(1500)
+        srv_log.setPlainText("等待任务开始。")
+        srv_log.hide()
 
         # 额外按钮：打开日志目录
         extra_btn = PushButton("打开日志目录", sc)
@@ -745,6 +711,7 @@ class QtPageFactory:
                 stage_label=ssl,
                 status_label=sstat,
                 progress_bar=spb,
+                progress_value_label=spv,
                 download_label=sdl,
                 output_label=sol,
                 summary_edit=srv_summary,

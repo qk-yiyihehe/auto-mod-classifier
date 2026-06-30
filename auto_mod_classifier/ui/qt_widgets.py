@@ -340,13 +340,6 @@ class StageBoard(QFrame):
                 self.stage_rows[stage_key]["line"] = line
                 track_layout.addWidget(line_filler, 2)
 
-        self.detail_label = BodyLabel("准备就绪", self)
-        self.detail_label.setWordWrap(True)
-        apply_themed_style(
-            self.detail_label,
-            lambda: f"color: {qt_theme.TEXT_MUTED}; background: transparent; font-size: {FONT_SIZE_XS}px;",
-        )
-        layout.addWidget(self.detail_label)
         self.reset()
 
     def reset(self) -> None:
@@ -356,7 +349,6 @@ class StageBoard(QFrame):
             detail = "准备就绪" if i == 0 else ""
             self.stage_details[key] = detail
             self._apply_state(key, "pending", detail)
-        self.detail_label.setText("准备就绪")
 
     def activate(self, stage_key: str, detail: str = "") -> None:
         if stage_key not in self.stage_rows:
@@ -370,7 +362,6 @@ class StageBoard(QFrame):
                 self._apply_state(key, "done", self.stage_details.get(key, "已完成"))
             elif i == ci:
                 self._apply_state(key, "running", self.stage_details.get(key, detail))
-                self.detail_label.setText(self.stage_details.get(key, detail) or "运行中")
             else:
                 self._apply_state(key, "pending", self.stage_details.get(key, ""))
 
@@ -380,7 +371,6 @@ class StageBoard(QFrame):
         final = self.stage_order[-1]
         self.stage_details[final] = detail
         self._apply_state(final, "done", detail)
-        self.detail_label.setText(detail)
         self.current_stage_key = final
 
     def fail(self, detail: str) -> None:
@@ -391,7 +381,6 @@ class StageBoard(QFrame):
                 self._apply_state(key, "done", self.stage_details.get(key, "已完成"))
             elif i == ci:
                 self._apply_state(key, "error", detail)
-                self.detail_label.setText(detail)
             else:
                 self._apply_state(key, "pending", self.stage_details.get(key, ""))
 

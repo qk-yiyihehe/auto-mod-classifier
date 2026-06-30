@@ -60,6 +60,7 @@ class TaskPanelState:
     stage_label: StrongBodyLabel
     status_label: BodyLabel
     progress_bar: ProgressBar
+    progress_value_label: BodyLabel
     download_label: BodyLabel
     output_label: BodyLabel
     summary_edit: PlainTextEdit

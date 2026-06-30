@@ -537,6 +537,7 @@ class App(FluentWindow):
         panel.log_edit.clear()
         panel.summary_edit.setPlainText("任务进行中，完成后这里会刷新摘要。")
         panel.progress_bar.setValue(0)
+        panel.progress_value_label.setText("0%")
         panel.output_label.setText("输出位置：运行中")
         panel.download_label.setText(build_idle_download_status_text())
         panel.stage_label.setText("当前阶段：准备开始")
@@ -635,7 +636,9 @@ class App(FluentWindow):
             elif kind == "stage":
                 self._update_stage_by_event(panel_key, payload)
             elif kind == "progress":
-                panel.progress_bar.setValue(max(0, min(100, int(float(payload)))))
+                progress_value = max(0, min(100, int(float(payload))))
+                panel.progress_bar.setValue(progress_value)
+                panel.progress_value_label.setText(f"{progress_value}%")
             elif kind == "output":
                 panel.output_label.setText(f"输出位置：{payload}")
             elif kind == "download-stats":
@@ -646,6 +649,7 @@ class App(FluentWindow):
                 panel.status_label.setText(payload["status"])
                 panel.status_dot.set_state("success")
                 panel.progress_bar.setValue(100)
+                panel.progress_value_label.setText("100%")
                 panel.output_label.setText(f"输出位置：{payload['output']}")
                 panel.download_label.setText(build_idle_download_status_text())
                 panel.summary_edit.setPlainText(payload.get("summary", payload["status"]))
