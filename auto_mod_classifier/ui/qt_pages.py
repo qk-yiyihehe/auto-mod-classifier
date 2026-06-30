@@ -554,6 +554,18 @@ class QtPageFactory:
             )
         )
 
+        out_card, out_gl = self._create_card("输出目录", "不填就按后端默认输出到当前模组同目录；填写后直接输出到指定目录。", variant="subtle")
+        out_card.setParent(left_col)
+        out_gl.setContentsMargins(SPACING_MD + 2, SPACING_SM + 2, SPACING_MD + 2, SPACING_SM + 2)
+        mod_out_edit = LineEdit(out_card)
+        mod_out_edit.setPlaceholderText("可选：选择模组筛选结果输出目录")
+        mod_out_edit.setClearButtonEnabled(True)
+        apply_input_style(mod_out_edit)
+        out_gl.addWidget(mod_out_edit)
+        out_gl.addLayout(
+            self._build_path_buttons(out_card, "浏览输出目录", self.app.choose_mod_output_folder)
+        )
+
         # 进度 + 指标（放在左侧，填充原本空白区域）
         board = StageBoard(
             "筛选进度",
@@ -582,6 +594,7 @@ class QtPageFactory:
         start_btn.clicked.connect(self.app.start_mod_task)
 
         left_layout.addWidget(src_card)
+        left_layout.addWidget(out_card)
         left_layout.addWidget(board, 3)
         left_layout.addWidget(start_btn)
 
@@ -635,7 +648,7 @@ class QtPageFactory:
                 result_table=mod_table,
                 result_hint_label=mod_hint,
             ),
-            inputs=ModInputWidgets(path_edit=mod_path_edit),
+            inputs=ModInputWidgets(path_edit=mod_path_edit, output_path_edit=mod_out_edit),
         )
 
     # ═══════════════════════════════════════════

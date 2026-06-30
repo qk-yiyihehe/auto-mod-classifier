@@ -369,6 +369,19 @@ class App(FluentWindow):
         if selected:
             self._require_mod_inputs().path_edit.setText(selected)
 
+    def choose_mod_output_folder(self) -> None:
+        mod_inputs = self._require_mod_inputs()
+        default_dir = mod_inputs.output_path_edit.text().strip()
+        if not default_dir:
+            source_text = mod_inputs.path_edit.text().strip()
+            if source_text:
+                source_path = Path(source_text)
+                if source_path.exists():
+                    default_dir = str(source_path.parent if source_path.is_file() else source_path)
+        selected = QFileDialog.getExistingDirectory(self, "选择模组筛选结果输出目录", default_dir)
+        if selected:
+            mod_inputs.output_path_edit.setText(selected)
+
     def choose_client_folder(self) -> None:
         selected = QFileDialog.getExistingDirectory(self, "选择客户端实例目录")
         if selected:
@@ -432,6 +445,7 @@ class App(FluentWindow):
 
         mod_inputs = self._require_mod_inputs()
         source_text = mod_inputs.path_edit.text().strip()
+        output_text = mod_inputs.output_path_edit.text().strip()
         if not source_text:
             self.show_warning("请先选择一个 mods 目录、客户端目录或整合包。")
             return
@@ -453,6 +467,7 @@ class App(FluentWindow):
 
         options = ModTaskOptions(
             mods_path=source_path,
+            output_dir=Path(output_text) if output_text else None,
             download_source=self.resolve_download_source(settings_widgets.filter_download_source_combo),
             dry_run=settings_widgets.filter_dry_run_checkbox.isChecked(),
             use_mcmod=settings_widgets.filter_use_mcmod_checkbox.isChecked(),

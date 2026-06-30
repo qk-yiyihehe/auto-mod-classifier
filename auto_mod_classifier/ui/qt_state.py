@@ -79,6 +79,7 @@ class TaskPanelState:
 @dataclass
 class ModInputWidgets:
     path_edit: LineEdit
+    output_path_edit: LineEdit
 
 
 @dataclass

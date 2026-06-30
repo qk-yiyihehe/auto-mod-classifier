@@ -22,6 +22,7 @@ class ScanModsRequest:
     use_mcmod: bool
     use_curseforge: bool
     enable_second_pass: bool
+    output_dir: Optional[Path] = None
 
 
 @dataclass

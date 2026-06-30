@@ -72,6 +72,14 @@ def _build_archive_report_root(source_path: Path) -> Path:
     return report_root
 
 
+def _resolve_mod_report_root(source_path: Path, output_dir: Optional[Path]) -> Path:
+    if output_dir is None:
+        return _build_archive_report_root(source_path)
+    target_root = output_dir.resolve()
+    target_root.mkdir(parents=True, exist_ok=True)
+    return target_root
+
+
 def _make_import_workspace(source_path: Path, cache_root: Optional[Path] = None) -> Dict[str, Path]:
     target_cache_root = cache_root or get_import_cache_root()
     target_cache_root.mkdir(parents=True, exist_ok=True)
@@ -276,12 +284,14 @@ class DirectorySourceImporter:
         mods_path = source_path / "mods" if (source_path / "mods").is_dir() else source_path
         if not mods_path.exists() or not mods_path.is_dir():
             raise RuntimeError("未找到可用于筛选的 mods 目录。")
+        report_root = request.output_dir.resolve() if request.output_dir is not None else mods_path
+        report_root.mkdir(parents=True, exist_ok=True)
         return PreparedModScanSource(
             source_kind="directory",
             display_path=request.source_path,
             workspace_root=source_path,
             mods_path=mods_path,
-            report_root=mods_path,
+            report_root=report_root,
             allow_file_move=True,
         )
 
@@ -417,7 +427,7 @@ class MrpackSourceImporter:
 
     def prepare_mod_scan(self, request: ScanModsRequest, emit) -> PreparedModScanSource:
         source_path = request.source_path.resolve()
-        report_root = _build_archive_report_root(source_path)
+        report_root = _resolve_mod_report_root(source_path, request.output_dir)
         prepared = self._prepare_client_workspace(
             source_path,
             request.download_source,
@@ -607,7 +617,7 @@ class ZipModpackSourceImporter:
 
     def prepare_mod_scan(self, request: ScanModsRequest, emit) -> PreparedModScanSource:
         source_path = request.source_path.resolve()
-        report_root = _build_archive_report_root(source_path)
+        report_root = _resolve_mod_report_root(source_path, request.output_dir)
         prepared = self._prepare_zip_workspace(
             source_path,
             request.download_source,
