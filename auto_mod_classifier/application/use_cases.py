@@ -5,6 +5,29 @@ from .contracts import ModScanService, ServerBuildService, SourceImporterRegistr
 from .models import BuildServerRequest, ScanModsRequest, TaskEmitter
 
 
+def _wrap_progress_emit(emit: TaskEmitter, progress_offset: int) -> TaskEmitter:
+    """给后续正式流程预留一段进度，避免整合包下载后进度条回退到 0。"""
+    if progress_offset <= 0:
+        return emit
+
+    progress_offset = max(0, min(progress_offset, 95))
+    progress_span = 100 - progress_offset
+
+    def _wrapped(kind: str, payload: Any) -> None:
+        if kind != "progress":
+            emit(kind, payload)
+            return
+        try:
+            raw_value = float(payload)
+        except Exception:
+            emit(kind, payload)
+            return
+        normalized = max(0.0, min(100.0, raw_value))
+        emit(kind, progress_offset + normalized * progress_span / 100.0)
+
+    return _wrapped
+
+
 class ScanModsUseCase:
     """前端无关的模组筛选用例。"""
 
@@ -26,7 +49,10 @@ class ScanModsUseCase:
             emit("error", str(exc))
             return
         try:
-            self.mod_scan_service.run(source, request, emit, set_runtime_ref)
+            metadata = source.metadata if isinstance(source.metadata, dict) else {}
+            progress_offset = int(metadata.get("service_progress_offset", 0))
+            service_emit = _wrap_progress_emit(emit, progress_offset)
+            self.mod_scan_service.run(source, request, service_emit, set_runtime_ref)
         finally:
             source.dispose()
 
@@ -54,10 +80,13 @@ class BuildServerUseCase:
             emit("error", str(exc))
             return
         try:
+            metadata = source.metadata if isinstance(source.metadata, dict) else {}
+            progress_offset = int(metadata.get("service_progress_offset", 0))
+            service_emit = _wrap_progress_emit(emit, progress_offset)
             self.server_build_service.run(
                 source,
                 request,
-                emit,
+                service_emit,
                 set_runtime_ref,
                 request_version_choice,
                 request_checklist,

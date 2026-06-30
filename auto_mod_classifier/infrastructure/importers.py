@@ -104,6 +104,16 @@ def _emit_download_idle(emit) -> None:
     _emit(emit, "download-stats", "当前网速：0 B/s | 下载线程：0/0 | 已完成：0/0")
 
 
+def _emit_import_progress(emit, current: int, total: int, *, start: int = 0, span: int = 35) -> None:
+    """导入整合包时，把下载进度映射到任务总进度的一小段区间。"""
+    if total <= 0:
+        _emit(emit, "progress", start)
+        return
+    bounded_current = max(0, min(current, total))
+    percent = bounded_current / total
+    _emit(emit, "progress", start + percent * span)
+
+
 def _verify_download_hash(file_path: Path, hashes: Dict[str, str]) -> None:
     """优先校验 sha512 / sha1，避免镜像异常时导入脏文件。"""
     supported = [name for name in ("sha512", "sha1") if hashes.get(name)]
@@ -298,11 +308,15 @@ class MrpackSourceImporter:
             _emit_download_idle(emit)
             return
 
+        progress_start = 5
+        progress_span = 35
         worker_count = choose_download_worker_count(len(files))
         reporter = DownloadStatsReporter(lambda text: _emit(emit, "download-stats", text), len(files), worker_count)
         if len(files) > 1:
             _emit(emit, "log", f"MRPACK 文件下载使用 {worker_count} 个并发线程。")
         _emit(emit, "status", f"正在下载 MRPACK 文件，共 {len(files)} 个…")
+        _emit(emit, "stage", {"stage_key": "scan", "detail": f"正在下载 MRPACK 文件：0/{len(files)}"})
+        _emit_import_progress(emit, 0, len(files), start=progress_start, span=progress_span)
 
         def _download_file(item: Dict[str, Any]) -> None:
             relative_path = str(item.get("path") or "").strip()
@@ -339,9 +353,15 @@ class MrpackSourceImporter:
             with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
                 for item in files:
                     futures.append(executor.submit(_download_file, item))
+                completed = 0
                 for future in concurrent.futures.as_completed(futures):
                     future.result()
+                    completed += 1
+                    _emit(emit, "status", f"正在下载 MRPACK 文件，共 {len(files)} 个…")
+                    _emit(emit, "stage", {"stage_key": "scan", "detail": f"正在下载 MRPACK 文件：{completed}/{len(files)}"})
+                    _emit_import_progress(emit, completed, len(files), start=progress_start, span=progress_span)
             _emit(emit, "status", "MRPACK 文件下载完成，正在整理目录…")
+            _emit(emit, "stage", {"stage_key": "scan", "detail": "MRPACK 文件下载完成，正在整理目录…"})
         finally:
             reporter.close()
 
@@ -391,6 +411,7 @@ class MrpackSourceImporter:
                 "manifest_type": "mrpack",
                 "manifest_name": manifest.get("name") or source_path.stem,
                 "manifest_version_id": manifest.get("versionId") or "",
+                "service_progress_offset": 40,
             },
         }
 
@@ -475,11 +496,15 @@ class ZipModpackSourceImporter:
             raise RuntimeError("CurseForge 整合包清单中存在无法识别的文件项。")
 
         if normalized_files:
+            progress_start = 5
+            progress_span = 35
             worker_count = choose_download_worker_count(len(normalized_files))
             reporter = DownloadStatsReporter(lambda text: _emit(emit, "download-stats", text), len(normalized_files), worker_count)
             if len(normalized_files) > 1:
                 _emit(emit, "log", f"CurseForge 文件下载使用 {worker_count} 个并发线程。")
             _emit(emit, "status", f"正在下载 CurseForge 文件，共 {len(normalized_files)} 个…")
+            _emit(emit, "stage", {"stage_key": "scan", "detail": f"正在下载 CurseForge 文件：0/{len(normalized_files)}"})
+            _emit_import_progress(emit, 0, len(normalized_files), start=progress_start, span=progress_span)
 
             def _download_file(item: Dict[str, Any]) -> None:
                 project_id = int(item.get("projectID") or item.get("projectId") or 0)
@@ -517,9 +542,15 @@ class ZipModpackSourceImporter:
                 with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
                     for item in normalized_files:
                         futures.append(executor.submit(_download_file, item))
+                    completed = 0
                     for future in concurrent.futures.as_completed(futures):
                         future.result()
+                        completed += 1
+                        _emit(emit, "status", f"正在下载 CurseForge 文件，共 {len(normalized_files)} 个…")
+                        _emit(emit, "stage", {"stage_key": "scan", "detail": f"正在下载 CurseForge 文件：{completed}/{len(normalized_files)}"})
+                        _emit_import_progress(emit, completed, len(normalized_files), start=progress_start, span=progress_span)
                 _emit(emit, "status", "CurseForge 文件下载完成，正在整理客户端目录…")
+                _emit(emit, "stage", {"stage_key": "scan", "detail": "CurseForge 文件下载完成，正在整理客户端目录…"})
             finally:
                 reporter.close()
         else:
@@ -535,6 +566,7 @@ class ZipModpackSourceImporter:
                 "manifest_type": "curseforge",
                 "manifest_name": manifest.get("name") or source_path.stem,
                 "manifest_version": manifest.get("version") or "",
+                "service_progress_offset": 40,
             },
         }
 
