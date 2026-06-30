@@ -29,6 +29,28 @@ _PROGRESS_UPDATE_INTERVAL_SECONDS = 0.15
 _PROGRESS_SAMPLE_WINDOW_SECONDS = 2.0
 _ATTEMPT_SUCCESS_CACHE_TTL_SECONDS = 300.0
 _ATTEMPT_FAILURE_CACHE_TTL_SECONDS = 45.0
+_SMART_RESOURCE_MOD_PLATFORM = "mod-platform"
+_SMART_RESOURCE_SERVER_DEPENDENCY = "server-dependency"
+_SMART_RESOURCE_GENERIC = "generic"
+_MOD_PLATFORM_HOSTS = {
+    "api.modrinth.com",
+    "cdn.modrinth.com",
+    "cdn-raw.modrinth.com",
+    "api.curseforge.com",
+    "edge.forgecdn.net",
+    "mediafilez.forgecdn.net",
+}
+_SERVER_DEPENDENCY_HOSTS = {
+    "libraries.minecraft.net",
+    "launcher.mojang.com",
+    "launchermeta.mojang.com",
+    "maven.fabricmc.net",
+    "maven.minecraftforge.net",
+    "maven.neoforged.net",
+    "meta.fabricmc.net",
+    "piston-data.mojang.com",
+    "piston-meta.mojang.com",
+}
 
 _DIRECT_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 _ATTEMPT_SCORE_CACHE: dict[tuple[str, str, str], tuple[float, float]] = {}
@@ -42,6 +64,7 @@ class DownloadAttempt:
     source_label: str
     route_code: str
     route_label: str
+    source_rank: int = 99
 
     @property
     def display_label(self) -> str:
@@ -107,6 +130,7 @@ def _rewrite_to_bmclapi(url: str) -> str:
         # BMCLAPI 当前没有同步这条安装器路径，直接跳过可以避免稳定 404。
         return url
     replacements = (
+        ("https://libraries.minecraft.net/", "https://bmclapi2.bangbang93.com/maven/"),
         ("https://meta.fabricmc.net/", "https://bmclapi2.bangbang93.com/fabric-meta/"),
         ("https://maven.fabricmc.net/", "https://bmclapi2.bangbang93.com/maven/"),
         ("https://maven.minecraftforge.net/", "https://bmclapi2.bangbang93.com/maven/"),
@@ -133,24 +157,48 @@ def _build_source_variants(url: str) -> dict[str, str]:
     return variants
 
 
+def _detect_smart_resource_family(url: str) -> str:
+    """智能优选按资源类型拆分：Mod 平台文件和开服依赖各走不同优先级。"""
+    lowered_url = str(url or "").strip().lower()
+    if not lowered_url:
+        return _SMART_RESOURCE_GENERIC
+
+    host = urllib.parse.urlsplit(lowered_url).netloc
+    if host in _MOD_PLATFORM_HOSTS:
+        return _SMART_RESOURCE_MOD_PLATFORM
+    if host in _SERVER_DEPENDENCY_HOSTS:
+        return _SMART_RESOURCE_SERVER_DEPENDENCY
+    return _SMART_RESOURCE_GENERIC
+
+
+def _get_source_priority_for_url(url: str, profile: str) -> list[str]:
+    if profile == DOWNLOAD_SOURCE_SMART:
+        resource_family = _detect_smart_resource_family(url)
+        if resource_family == _SMART_RESOURCE_MOD_PLATFORM:
+            # Mod 文件默认先试官方，再把 MCIM 作为回退。
+            return [DOWNLOAD_SOURCE_OFFICIAL, DOWNLOAD_SOURCE_MCIM]
+        if resource_family == _SMART_RESOURCE_SERVER_DEPENDENCY:
+            # Mojang / Fabric / Forge / NeoForge 依赖默认更适合先走 BMCLAPI。
+            return [DOWNLOAD_SOURCE_BMCLAPI, DOWNLOAD_SOURCE_OFFICIAL]
+        return [DOWNLOAD_SOURCE_OFFICIAL]
+    if profile == DOWNLOAD_SOURCE_BMCLAPI:
+        return [DOWNLOAD_SOURCE_BMCLAPI, DOWNLOAD_SOURCE_OFFICIAL]
+    if profile == DOWNLOAD_SOURCE_MCIM:
+        return [DOWNLOAD_SOURCE_MCIM, DOWNLOAD_SOURCE_OFFICIAL]
+    return [DOWNLOAD_SOURCE_OFFICIAL]
+
+
 def build_download_candidates(urls: Union[str, Sequence[str]], download_source: str) -> list[str]:
     """只返回 URL 级别候选，主要给调试和最小验证用。"""
     raw_urls = [urls] if isinstance(urls, str) else list(urls)
     profile = normalize_download_source(download_source)
-    if profile == DOWNLOAD_SOURCE_SMART:
-        source_priority = [DOWNLOAD_SOURCE_MCIM, DOWNLOAD_SOURCE_BMCLAPI, DOWNLOAD_SOURCE_OFFICIAL]
-    elif profile == DOWNLOAD_SOURCE_BMCLAPI:
-        source_priority = [DOWNLOAD_SOURCE_BMCLAPI, DOWNLOAD_SOURCE_OFFICIAL]
-    elif profile == DOWNLOAD_SOURCE_MCIM:
-        source_priority = [DOWNLOAD_SOURCE_MCIM, DOWNLOAD_SOURCE_OFFICIAL]
-    else:
-        source_priority = [DOWNLOAD_SOURCE_OFFICIAL]
 
     candidates: list[str] = []
     seen: set[str] = set()
     for url in raw_urls:
         if not url:
             continue
+        source_priority = _get_source_priority_for_url(url, profile)
         variants = _build_source_variants(url)
         for source_code in source_priority:
             candidate = variants.get(source_code)
@@ -177,22 +225,15 @@ def build_download_attempts(urls: Union[str, Sequence[str]], download_source: st
     raw_urls = [urls] if isinstance(urls, str) else list(urls)
     profile = normalize_download_source(download_source)
     routes = _available_routes()
-    if profile == DOWNLOAD_SOURCE_SMART:
-        source_priority = [DOWNLOAD_SOURCE_MCIM, DOWNLOAD_SOURCE_BMCLAPI, DOWNLOAD_SOURCE_OFFICIAL]
-    elif profile == DOWNLOAD_SOURCE_BMCLAPI:
-        source_priority = [DOWNLOAD_SOURCE_BMCLAPI, DOWNLOAD_SOURCE_OFFICIAL]
-    elif profile == DOWNLOAD_SOURCE_MCIM:
-        source_priority = [DOWNLOAD_SOURCE_MCIM, DOWNLOAD_SOURCE_OFFICIAL]
-    else:
-        source_priority = [DOWNLOAD_SOURCE_OFFICIAL]
 
     attempts: list[DownloadAttempt] = []
     seen: set[tuple[str, str]] = set()
     for url in raw_urls:
         if not url:
             continue
+        source_priority = _get_source_priority_for_url(url, profile)
         variants = _build_source_variants(url)
-        for source_code in source_priority:
+        for source_rank, source_code in enumerate(source_priority):
             candidate_url = variants.get(source_code)
             if not candidate_url:
                 continue
@@ -210,41 +251,27 @@ def build_download_attempts(urls: Union[str, Sequence[str]], download_source: st
                         source_label=source_label,
                         route_code=route_code,
                         route_label=route_label,
+                        source_rank=source_rank,
                     )
                 )
-    return _sort_attempts(attempts, profile)
+    return _sort_attempts(attempts)
 
 
-def _sort_attempts(attempts: list[DownloadAttempt], profile: str) -> list[DownloadAttempt]:
+def _sort_attempts(attempts: list[DownloadAttempt]) -> list[DownloadAttempt]:
     if len(attempts) <= 1:
         return attempts
 
-    if profile == DOWNLOAD_SOURCE_SMART:
-        source_rank = {
-            DOWNLOAD_SOURCE_MCIM: 0,
-            DOWNLOAD_SOURCE_BMCLAPI: 1,
-            DOWNLOAD_SOURCE_OFFICIAL: 2,
-        }
-        return sorted(attempts, key=lambda item: _build_attempt_sort_key(item, source_rank))
-
-    if profile == DOWNLOAD_SOURCE_BMCLAPI:
-        source_rank = {DOWNLOAD_SOURCE_BMCLAPI: 0, DOWNLOAD_SOURCE_OFFICIAL: 1}
-    elif profile == DOWNLOAD_SOURCE_MCIM:
-        source_rank = {DOWNLOAD_SOURCE_MCIM: 0, DOWNLOAD_SOURCE_OFFICIAL: 1}
-    else:
-        source_rank = {DOWNLOAD_SOURCE_OFFICIAL: 0}
-
-    return sorted(attempts, key=lambda item: _build_attempt_sort_key(item, source_rank))
+    return sorted(attempts, key=_build_attempt_sort_key)
 
 
-def _build_attempt_sort_key(attempt: DownloadAttempt, source_rank: dict[str, int]) -> tuple[float, float, int, int]:
+def _build_attempt_sort_key(attempt: DownloadAttempt) -> tuple[float, float, float, int]:
     cached_score = _get_cached_attempt_score(attempt)
     route_rank = _route_rank_for_source(attempt.source_code).get(attempt.route_code, 99)
     if cached_score is None:
-        return (1.0, float(source_rank.get(attempt.source_code, 99)), route_rank, 0)
+        return (1.0, float(attempt.source_rank), route_rank, 0.0)
     if math.isinf(cached_score):
-        return (2.0, float(source_rank.get(attempt.source_code, 99)), route_rank, 0)
-    return (0.0, cached_score, float(source_rank.get(attempt.source_code, 99)), route_rank)
+        return (2.0, float(attempt.source_rank), route_rank, 0.0)
+    return (0.0, cached_score, float(attempt.source_rank), float(route_rank))
 
 
 def _attempt_cache_key(attempt: DownloadAttempt) -> tuple[str, str, str]:
