@@ -97,7 +97,7 @@ class ServerPageBuild:
 
 @dataclass
 class ReportPageBuild:
-    page: TaskPage
+    page: ScrollablePage
     sections: Dict[str, ReportSectionState]
 
 
@@ -781,7 +781,7 @@ class QtPageFactory:
     # 结果报告
     # ═══════════════════════════════════════════
     def build_report_page(self) -> ReportPageBuild:
-        page = TaskPage(
+        page = ScrollablePage(
             "reportPage", "结果报告",
             "默认展示最近一次模组筛选预览，完成任务后会自动刷新真实结果。",
             self.app,
