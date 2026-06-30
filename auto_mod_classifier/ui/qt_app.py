@@ -80,7 +80,6 @@ class App(FluentWindow):
         self._runtime_ref: Any = None
         self._settings_data = self._load_settings_data()
         self._theme_mode: Theme = self._theme_from_index(int(self._settings_data.get("theme_index", 0)))
-        self._applied_effective_theme: Optional[Theme] = None
 
         self.home_widgets: Optional[HomeWidgets] = None
         self.report_sections: Dict[str, ReportSectionState] = {}
@@ -279,21 +278,16 @@ class App(FluentWindow):
 
     def _apply_theme_visuals(self, theme_mode: Theme, *, sync_fluent_theme: bool) -> None:
         effective_theme = self._resolve_effective_theme(theme_mode)
-        theme_changed = self._applied_effective_theme != effective_theme
-        if not theme_changed and not sync_fluent_theme:
-            return
         palette_name = "dark" if effective_theme == Theme.DARK else "light"
         set_palette(palette_name)
         self.setStyleSheet(build_window_stylesheet())
         light_bg = QColor("#F4F6FA")
         dark_bg = QColor("#0D1119")
         self.setCustomBackgroundColor(light_bg, dark_bg)
-        if sync_fluent_theme and theme_changed:
+        if sync_fluent_theme:
             setTheme(theme_mode)
         refresh_themed_styles()
-        if theme_changed:
-            self._refresh_visible_widget_styles()
-        self._applied_effective_theme = effective_theme
+        self._refresh_visible_widget_styles()
 
     def _refresh_visible_widget_styles(self) -> None:
         """主题切换后强制刷新可见控件，避免残留旧主题样式。"""
