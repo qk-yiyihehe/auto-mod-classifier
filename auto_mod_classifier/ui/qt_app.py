@@ -802,7 +802,7 @@ class App(FluentWindow):
         if section.empty_state_widget is not None:
             section.empty_state_widget.setVisible(True)
         if section.preview_hint_label is not None:
-            section.preview_hint_label.setText("默认按待确认和关键条目优先展示，完整结果仍可从目录里打开。")
+            section.preview_hint_label.setText("默认按待确认和关键条目优先展示，点击文件名可直接复制。")
         if section.empty_state_title is not None:
             section.empty_state_title.setText("还没有可预览的模组结果")
         if section.empty_state_body is not None:
@@ -856,7 +856,7 @@ class App(FluentWindow):
         if section.preview_hint_label is not None:
             unknown_count = sum(1 for row in rows if str(row.get("分类结果", "")) == "无法分类")
             section.preview_hint_label.setText(
-                f"已读取 {len(rows)} 条 CSV 结果，当前预览前 {len(preview_rows)} 条，其中待确认 {unknown_count} 条。"
+                f"已读取 {len(rows)} 条 CSV 结果，当前预览前 {len(preview_rows)} 条，其中待确认 {unknown_count} 条。点击文件名可复制。"
             )
         if section.empty_state_widget is not None:
             section.empty_state_widget.setVisible(False)

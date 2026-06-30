@@ -72,6 +72,7 @@ from .qt_widgets import (
     TaskPage,
     build_result_table,
     build_tab_host,
+    enable_filename_copy,
 )
 
 
@@ -802,13 +803,26 @@ class QtPageFactory:
         mod_sr.addWidget(mod_st, 1)
         mod_tm = BodyLabel("最近时间：暂无", mod_card)
         mod_tm.setWordWrap(True)
-        apply_label_tone(mod_tm, muted=True, size=FONT_SIZE_XS)
+        apply_themed_style(
+            mod_tm,
+            lambda: f"color: {qt_theme.TEXT_SECONDARY}; background: transparent; font-size: {FONT_SIZE_XS}px; font-weight: 500;",
+        )
         mod_sum = PlainTextEdit(mod_card)
         mod_sum.setReadOnly(True)
         mod_sum.setMinimumHeight(88)
         mod_sum.setMaximumHeight(120)
         mod_sum.setPlainText("这里会显示最近一次模组筛选的摘要。")
         apply_read_only_editor_style(mod_sum)
+        apply_themed_style(
+            mod_sum,
+            lambda: f"""
+                color: {qt_theme.TEXT_PRIMARY};
+                background-color: {qt_theme.SURFACE_ELEVATED};
+                border: 1px solid {qt_theme.BORDER_STRONG};
+                border-radius: {RADIUS_MD}px;
+                font-size: {FONT_SIZE_XS}px;
+            """,
+        )
 
         mod_empty = QWidget(mod_card)
         mod_empty_layout = QVBoxLayout(mod_empty)
@@ -821,7 +835,10 @@ class QtPageFactory:
         )
         mod_empty_body = BodyLabel("先去“模组筛选”页面运行一次脚本。完成后，这里会自动铺开显示文件名、分类结果、判定来源和判定原因。", mod_empty)
         mod_empty_body.setWordWrap(True)
-        apply_label_tone(mod_empty_body, muted=True, size=FONT_SIZE_XS)
+        apply_themed_style(
+            mod_empty_body,
+            lambda: f"color: {qt_theme.TEXT_SECONDARY}; background: transparent; font-size: {FONT_SIZE_XS}px; line-height: 1.6;",
+        )
         mod_empty_layout.addStretch(1)
         mod_empty_layout.addWidget(mod_empty_title)
         mod_empty_layout.addWidget(mod_empty_body)
@@ -831,11 +848,15 @@ class QtPageFactory:
         mod_preview_layout = QVBoxLayout(mod_preview)
         mod_preview_layout.setContentsMargins(0, 0, 0, 0)
         mod_preview_layout.setSpacing(SPACING_SM)
-        mod_hint = BodyLabel("默认按待确认和关键条目优先展示，完整结果仍可从目录里打开。", mod_preview)
+        mod_hint = BodyLabel("默认按待确认和关键条目优先展示，点击文件名可直接复制。", mod_preview)
         mod_hint.setWordWrap(True)
-        apply_label_tone(mod_hint, muted=True, size=FONT_SIZE_XS)
+        apply_themed_style(
+            mod_hint,
+            lambda: f"color: {qt_theme.TEXT_SECONDARY}; background: transparent; font-size: {FONT_SIZE_XS}px; font-weight: 500;",
+        )
         mod_table = build_result_table(mod_preview)
         mod_table.setMinimumHeight(420)
+        enable_filename_copy(mod_table, mod_hint)
         mod_preview_layout.addWidget(mod_hint)
         mod_preview_layout.addWidget(mod_table, 1)
         mod_preview.setVisible(False)
@@ -872,12 +893,25 @@ class QtPageFactory:
         sv_sr.addWidget(sv_st, 1)
         sv_tm = BodyLabel("最近时间：暂无", sv_card)
         sv_tm.setWordWrap(True)
-        apply_label_tone(sv_tm, muted=True, size=FONT_SIZE_XS)
+        apply_themed_style(
+            sv_tm,
+            lambda: f"color: {qt_theme.TEXT_SECONDARY}; background: transparent; font-size: {FONT_SIZE_XS}px; font-weight: 500;",
+        )
         sv_sum = PlainTextEdit(sv_card)
         sv_sum.setReadOnly(True)
         sv_sum.setMinimumHeight(220)
         sv_sum.setPlainText("先去“一键开服”页面运行一次脚本。完成后，这里会显示最近一次制作摘要和结果目录入口。")
         apply_read_only_editor_style(sv_sum)
+        apply_themed_style(
+            sv_sum,
+            lambda: f"""
+                color: {qt_theme.TEXT_PRIMARY};
+                background-color: {qt_theme.SURFACE_ELEVATED};
+                border: 1px solid {qt_theme.BORDER_STRONG};
+                border-radius: {RADIUS_MD}px;
+                font-size: {FONT_SIZE_XS}px;
+            """,
+        )
 
         sv_l.addLayout(sv_sr)
         sv_l.addWidget(sv_tm)
@@ -901,13 +935,15 @@ class QtPageFactory:
         sv_br.addWidget(spb)
         sv_l.addLayout(sv_br)
 
-        tab_host, _, _ = build_tab_host(
+        tab_host, segmented, stacked = build_tab_host(
             host_card,
             [
                 ("mod-result", "模组筛选结果", mod_card),
                 ("server-result", "一键开服结果", sv_card),
             ],
         )
+        segmented.setCurrentItem("mod-result")
+        stacked.setCurrentWidget(mod_card)
         host_layout.addWidget(tab_host)
         page.container_layout.addWidget(host_card)
         page.container_layout.addStretch(1)

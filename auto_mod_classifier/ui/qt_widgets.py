@@ -5,6 +5,7 @@ from typing import Dict, List, Optional
 from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt, QTimer
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
+    QApplication,
     QFrame,
     QGraphicsOpacityEffect,
     QHeaderView,
@@ -528,8 +529,8 @@ def build_tab_host(
 
 def build_result_table(parent: QWidget) -> TableWidget:
     table = TableWidget(parent)
-    table.setColumnCount(4)
-    table.setHorizontalHeaderLabels(["文件名", "分类结果", "判定来源", "原因"])
+    table.setColumnCount(5)
+    table.setHorizontalHeaderLabels(["#", "文件名", "分类结果", "判定来源", "原因"])
     table.verticalHeader().setVisible(False)
     table.setEditTriggers(TableWidget.NoEditTriggers)
     table.setSelectionBehavior(TableWidget.SelectRows)
@@ -540,24 +541,56 @@ def build_result_table(parent: QWidget) -> TableWidget:
     table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
     table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
     table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
-    table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
+    table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+    table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
     apply_themed_style(table, lambda: f"""
         background-color: {qt_theme.EDITOR_BG};
         alternate-background-color: {qt_theme.TABLE_ROW_BG};
-        color: {qt_theme.TEXT_SECONDARY};
-        border: 1px solid {qt_theme.BORDER_DEFAULT};
+        color: {qt_theme.TEXT_PRIMARY};
+        border: 1px solid {qt_theme.BORDER_STRONG};
         border-radius: {RADIUS_MD}px;
         gridline-color: {qt_theme.SCROLL_HANDLE_BG};
         selection-background-color: {ACCENT_BG_MEDIUM};
         selection-color: {qt_theme.TEXT_PRIMARY};
         font-size: {FONT_SIZE_XS}px;
-""")
+    """)
+    table.horizontalHeader().setStyleSheet(
+        f"""
+        QHeaderView::section {{
+            background-color: {qt_theme.TABLE_HEADER_BG};
+            color: {qt_theme.TEXT_PRIMARY};
+            border: 0;
+            border-bottom: 1px solid {qt_theme.BORDER_STRONG};
+            padding: 8px 10px;
+            font-size: {FONT_SIZE_XS}px;
+            font-weight: 600;
+        }}
+        """
+    )
     return table
 
 
 def populate_result_row(table: TableWidget, row_index: int, values: List[str]) -> None:
-    for ci, value in enumerate(values):
+    numbered_values = [str(row_index + 1), *values]
+    for ci, value in enumerate(numbered_values):
         item = QTableWidgetItem(value)
         item.setToolTip(value)
         item.setForeground(QBrush(QColor(qt_theme.TEXT_PRIMARY)))
         table.setItem(row_index, ci, item)
+
+
+def enable_filename_copy(table: TableWidget, status_label: Optional[BodyLabel] = None) -> None:
+    def _copy_filename(row: int, column: int) -> None:
+        if column != 1:
+            return
+        item = table.item(row, column)
+        if item is None:
+            return
+        text = item.text().strip()
+        if not text:
+            return
+        QApplication.clipboard().setText(text)
+        if status_label is not None:
+            status_label.setText(f"已复制文件名：{text}")
+
+    table.cellClicked.connect(_copy_filename)
