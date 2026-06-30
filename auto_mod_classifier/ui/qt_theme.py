@@ -83,6 +83,8 @@ _PALETTES["dark"]["BUTTON_PRESSED_BG"] = "#1F2740"     # 回到 SURFACE_INPUT
 _PALETTES["dark"]["INPUT_FOCUS_BG"] = "#232C46"        # 比 hover 略深，与卡片区分
 _PALETTES["dark"]["BUTTON_DISABLED_BG"] = "rgba(31, 39, 64, 0.5)"
 _PALETTES["dark"]["EDITOR_BG"] = "#11172A"            # 比内容区略深，让代码/日志区有"凹陷"感
+_PALETTES["dark"]["CONSOLE_BG"] = "#090E16"
+_PALETTES["dark"]["CONSOLE_TEXT"] = "#C6CDDA"
 _PALETTES["dark"]["TABLE_HEADER_BG"] = "#1A2336"       # 比卡片略深
 _PALETTES["dark"]["TABLE_ROW_BG"] = "#131A2A"          # 比 header 略深
 _PALETTES["dark"]["SCROLL_HANDLE_BG"] = "rgba(155, 163, 181, 0.18)"
@@ -104,6 +106,8 @@ _PALETTES["light"]["BUTTON_PRESSED_BG"] = "#DDE2EA"
 _PALETTES["light"]["INPUT_FOCUS_BG"] = "#FFFFFF"
 _PALETTES["light"]["BUTTON_DISABLED_BG"] = "rgba(0, 0, 0, 0.04)"
 _PALETTES["light"]["EDITOR_BG"] = "#FFFFFF"
+_PALETTES["light"]["CONSOLE_BG"] = "#F7F9FC"
+_PALETTES["light"]["CONSOLE_TEXT"] = "#2D3443"
 _PALETTES["light"]["TABLE_HEADER_BG"] = "#EEF1F6"
 _PALETTES["light"]["TABLE_ROW_BG"] = "#F8FAFC"
 _PALETTES["light"]["SCROLL_HANDLE_BG"] = "rgba(76, 84, 102, 0.18)"
@@ -656,10 +660,11 @@ def apply_read_only_editor_style(editor: PlainTextEdit, *, console: bool = False
     """主题感知的只读编辑器样式。"""
     font_family = f"{FONT_CODE}" if console else FONT_SYSTEM
     def _css() -> str:
-        bg = "#090E16" if console else _palette_pick("EDITOR_BG")
+        bg = _palette_pick("CONSOLE_BG") if console else _palette_pick("EDITOR_BG")
+        text_color = _palette_pick("CONSOLE_TEXT") if console else _palette_pick("TEXT_SECONDARY")
         return f"""
         background-color: {bg};
-        color: {_palette_pick("TEXT_SECONDARY")};
+        color: {text_color};
         border: 1px solid {_palette_pick("BORDER_DEFAULT")};
         border-radius: {RADIUS_MD}px;
         padding: 8px;

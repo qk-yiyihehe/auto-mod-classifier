@@ -603,9 +603,11 @@ class QtPageFactory:
 
         prev_card, prev_gl = self._create_card("实时日志", "只保留真实滚动日志，方便盯住当前进度。")
         prev_card.setParent(right_col)
-        _, mod_summary, mod_log, mod_table, mod_hint = self._build_log_pages(
+        result_page, mod_summary, mod_log, mod_table, mod_hint = self._build_log_pages(
             prev_card, with_result_table=True,
         )
+        result_page.hide()
+        mod_summary.parentWidget().hide()
         log_container = mod_log.parentWidget()
         if log_container is not None:
             prev_gl.addWidget(log_container)
@@ -725,6 +727,7 @@ class QtPageFactory:
         _, srv_summary, srv_log, _, _ = self._build_log_pages(
             prev_card, with_result_table=False,
         )
+        srv_summary.parentWidget().hide()
         log_container = srv_log.parentWidget()
         if log_container is not None:
             prev_gl.addWidget(log_container)
