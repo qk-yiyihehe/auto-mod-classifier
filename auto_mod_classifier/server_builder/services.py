@@ -1071,6 +1071,12 @@ class ServerLaunchService:
         except Exception:
             subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], capture_output=True, creationflags=SUBPROCESS_CREATIONFLAGS)
 
+    def get_server_boot_timeout_config(self, mode: str) -> Tuple[int, int]:
+        """返回启动阶段的超时策略：(无新输出超时，总兜底超时)。"""
+        if mode == "verify":
+            return DEFAULT_SERVER_TIMEOUT_SECONDS, DEFAULT_SERVER_VERIFY_MAX_TIMEOUT_SECONDS
+        return DEFAULT_SERVER_TIMEOUT_SECONDS, DEFAULT_SERVER_INIT_MAX_TIMEOUT_SECONDS
+
     def run_server_script(self, output_root: Path, launch_script: Path, mode: str) -> None:
         launch_path = launch_script.resolve()
         if not launch_path.exists():
@@ -1108,7 +1114,12 @@ class ServerLaunchService:
                 line_queue.put(None)
 
             threading.Thread(target=reader, daemon=True).start()
-            deadline = time.time() + DEFAULT_SERVER_TIMEOUT_SECONDS
+            idle_timeout_seconds, max_timeout_seconds = self.get_server_boot_timeout_config(mode)
+            started_at = time.time()
+            last_output_at = started_at
+            self.common.log_line(
+                f"{('首次启动' if mode == 'init' else '验证启动')}超时策略：连续 {idle_timeout_seconds} 秒无新输出才判定卡住，最长等待 {max_timeout_seconds} 秒。"
+            )
             saw_success = False
             stream_closed = False
             generated_at: Optional[float] = None
@@ -1126,6 +1137,7 @@ class ServerLaunchService:
                     if not stream_closed and process.poll() is not None:
                         stream_closed = True
                 else:
+                    last_output_at = time.time()
                     self.runtime.install_log_lines.append(item)
                     self.common.log_line(item)
                     if "Done (" in item or "For help, type" in item:
@@ -1152,12 +1164,23 @@ class ServerLaunchService:
                 if process.poll() is not None and stream_closed and line_queue.empty():
                     break
 
-                if time.time() > deadline:
+                now = time.time()
+                if now - started_at > max_timeout_seconds:
                     if mode == "verify" and saw_success:
                         self.stop_process(process)
                         break
                     subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], capture_output=True, creationflags=SUBPROCESS_CREATIONFLAGS)
-                    raise RuntimeError(f"服务端{('首次启动' if mode == 'init' else '验证启动')}超过 {DEFAULT_SERVER_TIMEOUT_SECONDS} 秒仍未完成。")
+                    raise RuntimeError(
+                        f"服务端{('首次启动' if mode == 'init' else '验证启动')}超过 {max_timeout_seconds} 秒仍未完成。"
+                    )
+                if now - last_output_at > idle_timeout_seconds:
+                    if mode == "verify" and saw_success:
+                        self.stop_process(process)
+                        break
+                    subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], capture_output=True, creationflags=SUBPROCESS_CREATIONFLAGS)
+                    raise RuntimeError(
+                        f"服务端{('首次启动' if mode == 'init' else '验证启动')}已连续 {idle_timeout_seconds} 秒没有新输出，判定为卡住。"
+                    )
 
             if mode == "init":
                 if eula_path.exists() or properties_path.exists():
