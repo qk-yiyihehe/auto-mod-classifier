@@ -778,11 +778,6 @@ class QtPageFactory:
             self.app,
         )
 
-        host_card, host_layout = self._create_card(
-            "最近结果预览",
-            "没开始运行时显示固定提示；完成任务后，会自动切到最近一次的真实结果。",
-        )
-
         mod_card, mod_l = self._create_card("模组筛选结果")
         mod_sr = QHBoxLayout()
         mod_sr.setSpacing(SPACING_SM)
@@ -919,11 +914,11 @@ class QtPageFactory:
         sv_br.addWidget(spb)
         sv_l.addLayout(sv_br)
 
-        host_layout.addWidget(mod_card)
-        host_layout.addWidget(sv_card)
+        page.container_layout.addWidget(mod_card, 1)
+        page.container_layout.addWidget(sv_card, 1)
         sv_card.hide()
-        page.container_layout.addWidget(host_card)
-        host_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        mod_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        sv_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         return ReportPageBuild(
             page=page,

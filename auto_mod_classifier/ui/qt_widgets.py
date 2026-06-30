@@ -520,20 +520,34 @@ def build_result_table(parent: QWidget) -> TableWidget:
         color: {qt_theme.TEXT_PRIMARY};
         border: 1px solid {qt_theme.BORDER_STRONG};
         border-radius: {RADIUS_MD}px;
+        outline: 0;
         gridline-color: {qt_theme.SCROLL_HANDLE_BG};
         selection-background-color: {ACCENT_BG_MEDIUM};
         selection-color: {qt_theme.TEXT_PRIMARY};
         font-size: {FONT_SIZE_XS}px;
     """)
     apply_themed_style(table.horizontalHeader(), lambda: f"""
+        QHeaderView {{
+            background-color: {qt_theme.TABLE_HEADER_BG};
+            border: 0;
+            border-top-left-radius: {RADIUS_MD}px;
+            border-top-right-radius: {RADIUS_MD}px;
+        }}
         QHeaderView::section {{
             background-color: {qt_theme.TABLE_HEADER_BG};
             color: {qt_theme.TEXT_PRIMARY};
             border: 0;
             border-bottom: 1px solid {qt_theme.BORDER_STRONG};
+            border-top: 0;
             padding: 8px 10px;
             font-size: {FONT_SIZE_XS}px;
             font-weight: 600;
+        }}
+        QHeaderView::section:first {{
+            border-top-left-radius: {RADIUS_MD}px;
+        }}
+        QHeaderView::section:last {{
+            border-top-right-radius: {RADIUS_MD}px;
         }}
     """)
     return table
