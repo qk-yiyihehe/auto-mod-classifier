@@ -531,7 +531,7 @@ class QtPageFactory:
         )
         left_col, left_layout, right_col, right_layout = self._build_task_workspace(page)
 
-        # — 左侧：输入 → 选项 → 进度 —
+        # — 左侧：输入 → 进度 —
         src_card, src_gl = self._create_card("输入源", "选择目录或整合包文件。", variant="subtle")
         src_card.setParent(left_col)
         src_gl.setContentsMargins(SPACING_MD + 2, SPACING_SM + 2, SPACING_MD + 2, SPACING_SM + 2)
@@ -546,16 +546,6 @@ class QtPageFactory:
                 "选择整合包", self.app.choose_mod_archive,
             )
         )
-
-        opt_card, opt_gl = self._create_card("选项", variant="subtle")
-        opt_card.setParent(left_col)
-        opt_gl.setContentsMargins(SPACING_MD + 2, SPACING_SM + 2, SPACING_MD + 2, SPACING_SM + 2)
-        dry = CheckBox("仅试运行，不移动文件", opt_card)
-        opt_gl.addWidget(dry)
-        stn_btn = PushButton("全局筛选规则可在设置中修改", opt_card)
-        stn_btn.setObjectName("smallButton")
-        stn_btn.clicked.connect(lambda: self.app.open_page(self.app.settings_page))
-        opt_gl.addWidget(stn_btn, 0, Qt.AlignLeft)
 
         # 进度 + 指标（放在左侧，填充原本空白区域）
         board = StageBoard(
@@ -585,7 +575,6 @@ class QtPageFactory:
         start_btn.clicked.connect(self.app.start_mod_task)
 
         left_layout.addWidget(src_card)
-        left_layout.addWidget(opt_card)
         left_layout.addWidget(board, 3)
         left_layout.addWidget(start_btn)
 
@@ -638,7 +627,7 @@ class QtPageFactory:
                 result_table=mod_table,
                 result_hint_label=mod_hint,
             ),
-            inputs=ModInputWidgets(path_edit=mod_path_edit, dry_run_checkbox=dry),
+            inputs=ModInputWidgets(path_edit=mod_path_edit),
         )
 
     # ═══════════════════════════════════════════
@@ -679,14 +668,6 @@ class QtPageFactory:
             self._build_path_buttons(out_card, "浏览输出目录", self.app.choose_output_folder)
         )
 
-        opt_card, opt_gl = self._create_card("选项", variant="subtle")
-        opt_card.setParent(left_col)
-        opt_gl.setContentsMargins(SPACING_MD + 2, SPACING_SM + 2, SPACING_MD + 2, SPACING_SM + 2)
-        stn_btn = PushButton("全局开服默认设置可在设置中修改", opt_card)
-        stn_btn.setObjectName("smallButton")
-        stn_btn.clicked.connect(lambda: self.app.open_page(self.app.settings_page))
-        opt_gl.addWidget(stn_btn, 0, Qt.AlignLeft)
-
         # 进度放在左侧，填充空白
         board = StageBoard(
             "开服阶段",
@@ -700,6 +681,17 @@ class QtPageFactory:
             ],
             left_col,
         )
+        metric_row = QHBoxLayout()
+        metric_row.setSpacing(SPACING_SM)
+        sm = MetricCard("服务端保留", "--", "识别为服务端可用", accent_color=INFO_COLOR)
+        sc = MetricCard("纯客户端", "--", "识别为仅客户端", accent_color=SUCCESS_COLOR)
+        sx = MetricCard("最终复制", "--", "实际进入服务端", accent_color=WARNING_COLOR)
+        metric_row.addWidget(sm, 1)
+        metric_row.addWidget(sc, 1)
+        metric_row.addWidget(sx, 1)
+        bl = board.layout()
+        if isinstance(bl, QVBoxLayout):
+            bl.addLayout(metric_row)
 
         start_btn = PrimaryPushButton("开始制作", left_col)
         start_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -707,7 +699,6 @@ class QtPageFactory:
 
         left_layout.addWidget(src_card)
         left_layout.addWidget(out_card)
-        left_layout.addWidget(opt_card)
         left_layout.addWidget(board, 3)
         left_layout.addWidget(start_btn)
 
@@ -761,6 +752,11 @@ class QtPageFactory:
                 start_button=start_btn,
                 result_button=srb,
                 extra_button=extra_btn,
+                metric_cards={
+                    "server-keep": sm,
+                    "client-only": sc,
+                    "final-copy": sx,
+                },
                 stage_board=board,
             ),
             inputs=ServerInputWidgets(
@@ -978,6 +974,9 @@ class QtPageFactory:
         f_l.setSpacing(SPACING_SM)
         f_dl = self._build_download_source_combo()
         self._add_control_row(f_l, "下载源", f_dl)
+        f_dry = CheckBox("仅试运行模组筛选，不移动原文件", f_card)
+        f_dry.setChecked(False)
+        f_l.addWidget(f_dry)
         f_mc = CheckBox("查询 MC百科", f_card)
         f_mc.setChecked(True)
         f_cf = CheckBox("查询 CurseForge", f_card)
@@ -1075,6 +1074,7 @@ class QtPageFactory:
             page=page,
             widgets=SettingsWidgets(
                 filter_download_source_combo=f_dl,
+                filter_dry_run_checkbox=f_dry,
                 filter_use_mcmod_checkbox=f_mc,
                 filter_use_cf_checkbox=f_cf,
                 filter_second_pass_checkbox=f_sp,

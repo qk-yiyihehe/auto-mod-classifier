@@ -78,7 +78,6 @@ class TaskPanelState:
 @dataclass
 class ModInputWidgets:
     path_edit: LineEdit
-    dry_run_checkbox: CheckBox
 
 
 @dataclass
@@ -90,6 +89,7 @@ class ServerInputWidgets:
 @dataclass
 class SettingsWidgets:
     filter_download_source_combo: ComboBox
+    filter_dry_run_checkbox: CheckBox
     filter_use_mcmod_checkbox: CheckBox
     filter_use_cf_checkbox: CheckBox
     filter_second_pass_checkbox: CheckBox

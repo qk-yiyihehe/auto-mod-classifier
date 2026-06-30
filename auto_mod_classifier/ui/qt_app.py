@@ -55,6 +55,7 @@ from .qt_widgets import populate_result_row
 SETTINGS_FILE_PATH = Path(__file__).resolve().parents[2] / "auto_mod_classifier_settings.json"
 DEFAULT_UI_SETTINGS: Dict[str, Any] = {
     "filter_download_source": DOWNLOAD_SOURCE_SMART,
+    "filter_dry_run": False,
     "filter_use_mcmod": True,
     "filter_use_curseforge": False,
     "filter_second_pass": False,
@@ -243,6 +244,7 @@ class App(FluentWindow):
             settings_widgets.filter_download_source_combo,
             str(data.get("filter_download_source", DOWNLOAD_SOURCE_SMART)),
         )
+        settings_widgets.filter_dry_run_checkbox.setChecked(bool(data.get("filter_dry_run", False)))
         settings_widgets.filter_use_mcmod_checkbox.setChecked(bool(data.get("filter_use_mcmod", True)))
         settings_widgets.filter_use_cf_checkbox.setChecked(bool(data.get("filter_use_curseforge", False)))
         settings_widgets.filter_second_pass_checkbox.setChecked(bool(data.get("filter_second_pass", False)))
@@ -265,6 +267,7 @@ class App(FluentWindow):
         settings_widgets = self._require_settings_widgets()
         return {
             "filter_download_source": self.resolve_download_source(settings_widgets.filter_download_source_combo),
+            "filter_dry_run": settings_widgets.filter_dry_run_checkbox.isChecked(),
             "filter_use_mcmod": settings_widgets.filter_use_mcmod_checkbox.isChecked(),
             "filter_use_curseforge": settings_widgets.filter_use_cf_checkbox.isChecked(),
             "filter_second_pass": settings_widgets.filter_second_pass_checkbox.isChecked(),
@@ -451,7 +454,7 @@ class App(FluentWindow):
         options = ModTaskOptions(
             mods_path=source_path,
             download_source=self.resolve_download_source(settings_widgets.filter_download_source_combo),
-            dry_run=mod_inputs.dry_run_checkbox.isChecked(),
+            dry_run=settings_widgets.filter_dry_run_checkbox.isChecked(),
             use_mcmod=settings_widgets.filter_use_mcmod_checkbox.isChecked(),
             use_curseforge=settings_widgets.filter_use_cf_checkbox.isChecked(),
             enable_second_pass=settings_widgets.filter_second_pass_checkbox.isChecked(),
@@ -690,21 +693,67 @@ class App(FluentWindow):
         self._flush_pending_logs()
 
     def _update_panel_metrics(self, panel_key: str, payload: Dict[str, Any]) -> None:
-        if panel_key != "mod" or not self.mod_panel:
+        summary = payload.get("summary", "")
+        if panel_key == "mod" and self.mod_panel:
+            mapping = {
+                "server-keep": r"服务端保留:\s*(\d+)",
+                "client-only": r"纯客户端移出:\s*(\d+)",
+                "unknown": r"无法分类:\s*(\d+)",
+            }
+            for key, pattern in mapping.items():
+                metric_card = self.mod_panel.metric_cards.get(key)
+                if metric_card is None:
+                    continue
+                match = re.search(pattern, summary)
+                metric_card.set_value(match.group(1) if match else "--")
             return
 
-        summary = payload.get("summary", "")
+        if panel_key != "server" or not self.server_panel:
+            return
+
+        report_dir = payload.get("extra_dir")
+        if not isinstance(report_dir, Path):
+            metric_mapping = {
+                "server-keep": "--",
+                "client-only": "--",
+                "final-copy": "--",
+            }
+        else:
+            metric_mapping = self._read_server_metric_values(report_dir)
+
+        for key, value in metric_mapping.items():
+            metric_card = self.server_panel.metric_cards.get(key)
+            if metric_card is not None:
+                metric_card.set_value(value)
+
+    def _read_server_metric_values(self, report_dir: Path) -> Dict[str, str]:
+        report_path = report_dir / f"{MOD_REPORT_BASENAME}.txt"
+        if not report_path.exists():
+            return {
+                "server-keep": "--",
+                "client-only": "--",
+                "final-copy": "--",
+            }
+
+        try:
+            summary_text = report_path.read_text(encoding="utf-8")
+        except Exception:
+            return {
+                "server-keep": "--",
+                "client-only": "--",
+                "final-copy": "--",
+            }
+
         mapping = {
             "server-keep": r"服务端保留:\s*(\d+)",
-            "client-only": r"纯客户端移出:\s*(\d+)",
-            "unknown": r"无法分类:\s*(\d+)",
+            "client-only": r"纯客户端:\s*(\d+)",
+            "final-copy": r"最终复制:\s*(\d+)",
         }
+        result: Dict[str, str] = {}
         for key, pattern in mapping.items():
-            metric_card = self.mod_panel.metric_cards.get(key)
-            if metric_card is None:
-                continue
-            match = re.search(pattern, summary)
-            metric_card.set_value(match.group(1) if match else "--")
+            match = re.search(pattern, summary_text)
+            result[key] = match.group(1) if match else "--"
+        return result
 
     def _detect_stage_key(self, panel_key: str, message: str) -> Optional[str]:
         text = str(message or "")
