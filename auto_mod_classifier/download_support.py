@@ -1,3 +1,4 @@
+import ipaddress
 import json
 import math
 import socket
@@ -32,6 +33,9 @@ _ATTEMPT_FAILURE_CACHE_TTL_SECONDS = 45.0
 _SMART_RESOURCE_MOD_PLATFORM = "mod-platform"
 _SMART_RESOURCE_SERVER_DEPENDENCY = "server-dependency"
 _SMART_RESOURCE_GENERIC = "generic"
+_PROXY_MODE_NONE = "none"
+_PROXY_MODE_LOCAL = "local"
+_PROXY_MODE_REMOTE = "remote"
 _MOD_PLATFORM_HOSTS = {
     "api.modrinth.com",
     "cdn.modrinth.com",
@@ -171,6 +175,42 @@ def _detect_smart_resource_family(url: str) -> str:
     return _SMART_RESOURCE_GENERIC
 
 
+def _extract_proxy_host(proxy_value: str) -> str:
+    raw_value = str(proxy_value or "").strip()
+    if not raw_value:
+        return ""
+    if "://" not in raw_value:
+        raw_value = f"http://{raw_value}"
+    parsed = urllib.parse.urlsplit(raw_value)
+    return (parsed.hostname or "").strip().lower()
+
+
+def _is_local_proxy_host(host: str) -> bool:
+    lowered = str(host or "").strip().lower()
+    if not lowered:
+        return False
+    if lowered in {"127.0.0.1", "localhost", "::1"}:
+        return True
+    try:
+        address = ipaddress.ip_address(lowered)
+    except ValueError:
+        return lowered.endswith(".local")
+    return address.is_loopback or address.is_private or address.is_link_local
+
+
+def _detect_proxy_mode() -> str:
+    proxies = urllib.request.getproxies()
+    if not proxies:
+        return _PROXY_MODE_NONE
+
+    for key in ("https", "http", "all"):
+        value = proxies.get(key)
+        if not value:
+            continue
+        return _PROXY_MODE_LOCAL if _is_local_proxy_host(_extract_proxy_host(value)) else _PROXY_MODE_REMOTE
+    return _PROXY_MODE_REMOTE
+
+
 def _get_source_priority_for_url(url: str, profile: str) -> list[str]:
     if profile == DOWNLOAD_SOURCE_SMART:
         resource_family = _detect_smart_resource_family(url)
@@ -178,6 +218,9 @@ def _get_source_priority_for_url(url: str, profile: str) -> list[str]:
             # Mod 文件默认先试官方，再把 MCIM 作为回退。
             return [DOWNLOAD_SOURCE_OFFICIAL, DOWNLOAD_SOURCE_MCIM]
         if resource_family == _SMART_RESOURCE_SERVER_DEPENDENCY:
+            if _detect_proxy_mode() != _PROXY_MODE_NONE:
+                # 用户开了系统代理时，官方依赖更容易直接吃到代理收益。
+                return [DOWNLOAD_SOURCE_OFFICIAL, DOWNLOAD_SOURCE_BMCLAPI]
             # Mojang / Fabric / Forge / NeoForge 依赖默认更适合先走 BMCLAPI。
             return [DOWNLOAD_SOURCE_BMCLAPI, DOWNLOAD_SOURCE_OFFICIAL]
         return [DOWNLOAD_SOURCE_OFFICIAL]
