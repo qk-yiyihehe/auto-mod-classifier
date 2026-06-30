@@ -244,6 +244,7 @@ class QtPageFactory:
     ]:
         card, layout = self._create_card(title)
         card.setParent(parent)
+        card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
 
         # 上行：状态点 + 阶段名 + 进度条
         top_row = QHBoxLayout()
@@ -551,7 +552,8 @@ class QtPageFactory:
             lambda: self.app.open_page(self.app.report_page),
             parent=right_col,
         )
-        right_layout.addWidget(sc, 1)
+        right_layout.addWidget(sc, 0)
+        right_layout.addStretch(1)
 
         mod_summary = PlainTextEdit(right_col)
         mod_summary.setReadOnly(True)
@@ -565,9 +567,6 @@ class QtPageFactory:
         mod_log.setPlainText("等待任务开始。")
         mod_log.hide()
 
-        mod_table = build_result_table(right_col)
-        mod_hint = BodyLabel("结果将在任务完成后展示。", right_col)
-        mod_hint.hide()
         return ModPageBuild(
             page=page,
             panel=TaskPanelState(
@@ -589,8 +588,8 @@ class QtPageFactory:
                     "unknown": mu,
                 },
                 stage_board=board,
-                result_table=mod_table,
-                result_hint_label=mod_hint,
+                result_table=None,
+                result_hint_label=None,
             ),
             inputs=ModInputWidgets(path_edit=mod_path_edit),
         )
@@ -676,7 +675,8 @@ class QtPageFactory:
             lambda: self.app.open_page(self.app.report_page),
             parent=right_col,
         )
-        right_layout.addWidget(sc, 1)
+        right_layout.addWidget(sc, 0)
+        right_layout.addStretch(1)
 
         srv_summary = PlainTextEdit(right_col)
         srv_summary.setReadOnly(True)
@@ -697,12 +697,15 @@ class QtPageFactory:
         extra_btn.clicked.connect(lambda: self.app.open_panel_path("server", "extra"))
         sl = sc.layout()
         if sl is not None:
-            last_item = sl.itemAt(sl.count() - 1)
+            inner_item = sl.itemAt(0)
+            inner_widget = inner_item.widget() if inner_item is not None else None
+            inner_layout = inner_widget.layout() if inner_widget is not None else None
+            last_item = inner_layout.itemAt(inner_layout.count() - 1) if inner_layout is not None else None
             al = last_item.layout() if last_item is not None else None
             if isinstance(al, QHBoxLayout):
-                al.insertWidget(2, extra_btn)
-            else:
-                sl.addWidget(extra_btn, 0, Qt.AlignLeft)
+                al.insertWidget(1, extra_btn)
+            elif inner_layout is not None:
+                inner_layout.addWidget(extra_btn, 0, Qt.AlignLeft)
 
         return ServerPageBuild(
             page=page,
