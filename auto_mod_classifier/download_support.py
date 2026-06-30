@@ -24,7 +24,8 @@ from .shared import (
 DEFAULT_DOWNLOAD_WORKERS = 6
 DEFAULT_DOWNLOAD_TIMEOUT_SECONDS = 15
 DEFAULT_METADATA_TIMEOUT_SECONDS = 12
-_PROGRESS_UPDATE_INTERVAL_SECONDS = 0.25
+_DOWNLOAD_CHUNK_SIZE = 64 * 1024
+_PROGRESS_UPDATE_INTERVAL_SECONDS = 0.15
 _PROGRESS_SAMPLE_WINDOW_SECONDS = 2.0
 _ATTEMPT_SUCCESS_CACHE_TTL_SECONDS = 300.0
 _ATTEMPT_FAILURE_CACHE_TTL_SECONDS = 45.0
@@ -442,7 +443,7 @@ def http_download(
                 with _open_request(req, attempt.route_code, timeout=timeout) as resp:
                     with temp_path.open("wb") as fp:
                         while True:
-                            chunk = resp.read(1024 * 1024)
+                            chunk = resp.read(_DOWNLOAD_CHUNK_SIZE)
                             if not chunk:
                                 break
                             if first_chunk_at is None:

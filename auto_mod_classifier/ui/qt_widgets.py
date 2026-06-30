@@ -353,7 +353,7 @@ class StageBoard(QFrame):
         self.stage_details.clear()
         self.current_stage_key = None
         for i, key in enumerate(self.stage_order):
-            detail = "准备就绪" if i == 0 else ""
+            detail = ""
             self.stage_details[key] = detail
             self._apply_state(key, "pending", detail)
         self.detail_label.setText("准备就绪")

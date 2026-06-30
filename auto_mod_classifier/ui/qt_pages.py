@@ -240,7 +240,7 @@ class QtPageFactory:
         parent: QWidget,
     ) -> tuple[
         QFrame, StatusDot, StrongBodyLabel, BodyLabel, ProgressBar,
-        BodyLabel, BodyLabel, PushButton, PushButton,
+        BodyLabel, BodyLabel, BodyLabel, PushButton, PushButton,
     ]:
         card, layout = self._create_card(title)
         card.setParent(parent)
@@ -264,6 +264,13 @@ class QtPageFactory:
         progress_bar.setValue(0)
         progress_bar.setFixedWidth(120)
         top_row.addWidget(progress_bar, 0, Qt.AlignVCenter)
+
+        progress_value_label = BodyLabel("0%", card)
+        apply_themed_style(
+            progress_value_label,
+            lambda: f"color: {qt_theme.TEXT_MUTED}; background: transparent; font-size: {FONT_SIZE_XS}px; font-weight: 600;",
+        )
+        top_row.addWidget(progress_value_label, 0, Qt.AlignVCenter)
         layout.addLayout(top_row)
 
         # 中行：状态文字
@@ -302,7 +309,7 @@ class QtPageFactory:
         layout.addLayout(btn_row)
 
         return (
-            card, status_dot, stage_label, status_label, progress_bar,
+            card, status_dot, stage_label, status_label, progress_bar, progress_value_label,
             dl, ol, result_button, report_button,
         )
 
@@ -580,7 +587,7 @@ class QtPageFactory:
 
         # — 右侧：状态 + 日志（扩大日志区域）—
         (
-            sc, msd, msl, mstat, mpb, mdl, mol, mrb, _mrp,
+            sc, msd, msl, mstat, mpb, mpv, mdl, mol, mrb, _mrp,
         ) = self._build_status_card(
             "运行状态", "选择输入源后开始筛选。",
             "打开结果目录",
@@ -611,6 +618,7 @@ class QtPageFactory:
                 stage_label=msl,
                 status_label=mstat,
                 progress_bar=mpb,
+                progress_value_label=mpv,
                 download_label=mdl,
                 output_label=mol,
                 summary_edit=mod_summary,
@@ -703,7 +711,7 @@ class QtPageFactory:
         left_layout.addWidget(start_btn)
 
         (
-            sc, ssd, ssl, sstat, spb, sdl, sol, srb, _srp,
+            sc, ssd, ssl, sstat, spb, spv, sdl, sol, srb, _srp,
         ) = self._build_status_card(
             "运行状态", "选择输入源和输出目录后开始制作。",
             "打开服务端目录",
@@ -745,6 +753,7 @@ class QtPageFactory:
                 stage_label=ssl,
                 status_label=sstat,
                 progress_bar=spb,
+                progress_value_label=spv,
                 download_label=sdl,
                 output_label=sol,
                 summary_edit=srv_summary,
