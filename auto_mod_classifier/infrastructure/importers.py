@@ -2,6 +2,7 @@ import atexit
 import concurrent.futures
 import hashlib
 import json
+import os
 import shutil
 import tempfile
 import zipfile
@@ -186,40 +187,57 @@ def _looks_like_client_root(path: Path) -> bool:
     return has_mods and (has_versions or has_config or has_manifest)
 
 
-def _find_zip_client_root(extracted_root: Path) -> Optional[Path]:
-    if _looks_like_client_root(extracted_root):
-        return extracted_root
-
-    for child in sorted(extracted_root.iterdir(), key=lambda item: item.name.lower()):
-        if not child.is_dir():
+def _iter_directory_candidates(base_dir: Path, max_depth: int = 4) -> Iterable[Path]:
+    """递归枚举候选目录，兼容带一层或多层外壳的整合包。"""
+    yield base_dir
+    base_depth = len(base_dir.parts)
+    for current_root, dir_names, _file_names in os.walk(base_dir):
+        dir_names.sort(key=str.lower)
+        current_path = Path(current_root)
+        depth = len(current_path.parts) - base_depth
+        if depth >= max_depth:
+            dir_names[:] = []
+        if current_path == base_dir:
             continue
-        if _looks_like_client_root(child):
-            return child
-        minecraft_root = child / ".minecraft"
+        yield current_path
+
+
+def _find_zip_client_root(extracted_root: Path) -> Optional[Path]:
+    for candidate in _iter_directory_candidates(extracted_root):
+        if _looks_like_client_root(candidate):
+            return candidate
+        minecraft_root = candidate / ".minecraft"
         if minecraft_root.is_dir():
-            return child
+            return candidate
     return None
 
 
 def _find_mod_scan_root(extracted_root: Path) -> Optional[Path]:
-    if (extracted_root / "mods").is_dir():
-        return extracted_root
-
-    nested_minecraft = extracted_root / ".minecraft"
-    if (nested_minecraft / "mods").is_dir():
-        return nested_minecraft
-
-    for child in sorted(extracted_root.iterdir(), key=lambda item: item.name.lower()):
-        if not child.is_dir():
-            continue
-        if (child / "mods").is_dir():
-            return child
-        if child.name.lower() == "mods":
-            return extracted_root
-        nested = child / ".minecraft"
+    for candidate in _iter_directory_candidates(extracted_root):
+        if (candidate / "mods").is_dir():
+            return candidate
+        if candidate.name.lower() == "mods":
+            return candidate.parent
+        nested = candidate / ".minecraft"
         if (nested / "mods").is_dir():
             return nested
     return None
+
+
+def _find_nested_mrpack_file(extracted_root: Path) -> Optional[Path]:
+    """识别 PCL / HMCL 这类 ZIP 里再套一个 mrpack 的整合包。"""
+    if not extracted_root.exists():
+        return None
+    candidates = sorted(
+        (
+            item
+            for candidate in _iter_directory_candidates(extracted_root, max_depth=6)
+            for item in candidate.glob("*.mrpack")
+            if item.is_file()
+        ),
+        key=lambda item: (len(item.relative_to(extracted_root).parts), item.name.lower()),
+    )
+    return candidates[0] if candidates else None
 
 
 def _parse_curseforge_loader_id(loader_id: str, minecraft_version: str, json_path: Path) -> Optional[VersionCandidate]:
@@ -506,8 +524,9 @@ class ZipModpackSourceImporter:
         request_download_source: str,
         emit,
         cache_root: Optional[Path] = None,
+        existing_workspace: Optional[Dict[str, Path]] = None,
     ) -> Dict[str, Any]:
-        workspace = self._extract_zip(source_path, cache_root=cache_root)
+        workspace = existing_workspace or self._extract_zip(source_path, cache_root=cache_root)
         extracted_root = workspace["extracted_root"]
         client_root = workspace["client_root"]
         client_root.mkdir(parents=True, exist_ok=True)
@@ -601,8 +620,13 @@ class ZipModpackSourceImporter:
             },
         }
 
-    def _prepare_generic_zip_workspace(self, source_path: Path, cache_root: Optional[Path] = None) -> Dict[str, Any]:
-        workspace = self._extract_zip(source_path, cache_root=cache_root)
+    def _prepare_generic_zip_workspace(
+        self,
+        source_path: Path,
+        cache_root: Optional[Path] = None,
+        existing_workspace: Optional[Dict[str, Path]] = None,
+    ) -> Dict[str, Any]:
+        workspace = existing_workspace or self._extract_zip(source_path, cache_root=cache_root)
         extracted_root = workspace["extracted_root"]
         client_root = _find_zip_client_root(extracted_root)
         mod_scan_root = _find_mod_scan_root(extracted_root)
@@ -620,8 +644,15 @@ class ZipModpackSourceImporter:
         emit,
         cache_root: Optional[Path] = None,
     ) -> Dict[str, Any]:
+        _emit(emit, "status", "正在解析 ZIP 整合包…")
+        _emit(emit, "stage", {"stage_key": "scan", "detail": f"正在解压 ZIP 整合包：{source_path.name}"})
+        _emit(emit, "log", f"开始解析 ZIP 整合包：{source_path}")
+        _emit(emit, "progress", 1)
         probe_workspace = self._extract_zip(source_path, cache_root=cache_root)
         extracted_root = probe_workspace["extracted_root"]
+        _emit(emit, "status", "ZIP 解压完成，正在识别整合包结构…")
+        _emit(emit, "log", f"ZIP 解压完成：{source_path.name}")
+        _emit(emit, "progress", 3)
         manifest_path = extracted_root / "manifest.json"
         if manifest_path.exists():
             try:
@@ -630,11 +661,47 @@ class ZipModpackSourceImporter:
                 cleanup_import_workspace(probe_workspace["workspace_root"])
                 raise RuntimeError("该 ZIP 中的 manifest.json 不是有效的 JSON，无法继续识别整合包类型。") from exc
             if isinstance(manifest, dict) and "minecraft" in manifest and "files" in manifest:
-                cleanup_import_workspace(probe_workspace["workspace_root"])
                 _emit(emit, "status", "识别为 CurseForge 整合包，正在下载缺失文件…")
-                return self._prepare_curseforge_workspace(source_path, download_source, emit, cache_root=cache_root)
+                _emit(emit, "log", "检测到 CurseForge manifest.json，继续按 CurseForge 整合包处理。")
+                return self._prepare_curseforge_workspace(
+                    source_path,
+                    download_source,
+                    emit,
+                    cache_root=cache_root,
+                    existing_workspace=probe_workspace,
+                )
 
-        return self._prepare_generic_zip_workspace(source_path, cache_root=cache_root)
+        nested_mrpack_path = _find_nested_mrpack_file(extracted_root)
+        if nested_mrpack_path is not None:
+            nested_label = nested_mrpack_path.relative_to(extracted_root)
+            _emit(emit, "status", "识别为内嵌 MRPACK 整合包，正在继续导入…")
+            _emit(emit, "log", f"ZIP 内检测到内嵌 MRPACK：{nested_label}")
+            mrpack_importer = MrpackSourceImporter()
+            try:
+                prepared = mrpack_importer._prepare_client_workspace(
+                    nested_mrpack_path,
+                    download_source,
+                    emit,
+                    cache_root=cache_root,
+                )
+            finally:
+                cleanup_import_workspace(probe_workspace["workspace_root"])
+            prepared["metadata"] = {
+                **prepared.get("metadata", {}),
+                "manifest_type": "nested-mrpack-zip",
+                "container_archive": source_path.name,
+            }
+            return prepared
+
+        prepared = self._prepare_generic_zip_workspace(
+            source_path,
+            cache_root=cache_root,
+            existing_workspace=probe_workspace,
+        )
+        if prepared.get("client_root") or prepared.get("mod_scan_root"):
+            _emit(emit, "status", "已识别为完整客户端压缩包，正在整理目录…")
+            _emit(emit, "log", "ZIP 导入完成，已识别到可用的客户端结构。")
+        return prepared
 
     def prepare_mod_scan(self, request: ScanModsRequest, emit) -> PreparedModScanSource:
         source_path = request.source_path.resolve()
