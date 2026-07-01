@@ -976,6 +976,9 @@ class QtPageFactory:
         f_dry = CheckBox("仅预览模组筛选结果，不移动原文件", f_card)
         f_dry.setChecked(False)
         f_l.addWidget(f_dry)
+        f_offline = CheckBox("优先使用本地离线库（程序目录旁的 db.sqlite）", f_card)
+        f_offline.setChecked(False)
+        f_l.addWidget(f_offline)
         f_mc = CheckBox("查询 MC百科", f_card)
         f_mc.setChecked(True)
         f_cf = CheckBox("查询 CurseForge", f_card)
@@ -1082,6 +1085,7 @@ class QtPageFactory:
             page=page,
             widgets=SettingsWidgets(
                 filter_dry_run_checkbox=f_dry,
+                filter_use_offline_db_checkbox=f_offline,
                 filter_use_mcmod_checkbox=f_mc,
                 filter_use_cf_checkbox=f_cf,
                 filter_second_pass_checkbox=f_sp,

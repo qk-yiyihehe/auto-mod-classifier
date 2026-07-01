@@ -91,6 +91,7 @@ class ServerInputWidgets:
 @dataclass
 class SettingsWidgets:
     filter_dry_run_checkbox: CheckBox
+    filter_use_offline_db_checkbox: CheckBox
     filter_use_mcmod_checkbox: CheckBox
     filter_use_cf_checkbox: CheckBox
     filter_second_pass_checkbox: CheckBox

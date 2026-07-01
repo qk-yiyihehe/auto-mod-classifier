@@ -1,4 +1,5 @@
 from ..shared import *
+from .offline_database import OfflineModDatabase
 from .browser import ClassifierBrowserMixin
 from .network import ClassifierNetworkMixin
 from .text_utils import ClassifierTextMixin
@@ -33,5 +34,7 @@ class ClassifierCore(
         self._captcha_done.set()
         # CurseForge 开关
         self.use_curseforge: bool = False
+        self.use_offline_database: bool = False
+        self.offline_database = OfflineModDatabase()
         # 由界面层注入提示回调，核心层不直接依赖 Tk 弹窗
         self.browser_warning_callback: Optional[Callable[[str], None]] = None

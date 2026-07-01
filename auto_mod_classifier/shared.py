@@ -39,6 +39,7 @@ USER_AGENT = "AutoModClassifier/3.00 (+Codex)"
 SYSTEM_ENCODING = locale.getpreferredencoding(False) or "utf-8"
 SUBPROCESS_CREATIONFLAGS = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 TOOL_DIR_NAME = "_自动筛选模组分类器"
+OFFLINE_DB_FILE_NAME = "db.sqlite"
 MOD_REPORT_BASENAME = "模组筛选报告"
 CONFIG_COPY_SUMMARY_NAME = "目录复制摘要.json"
 BUILD_LOG_NAME = "制作日志.txt"
@@ -167,10 +168,33 @@ CSV_COLUMN_LABELS = {
     "JarStatus": "Jar状态",
     "JarIssue": "Jar异常",
 }
+DECISION_SOURCE_LABELS = {
+    "local": "本地元数据",
+    "offline-db": "本地离线库",
+    "modrinth": "Modrinth",
+    "mcmod": "MC百科",
+    "curseforge": "CurseForge",
+    "error": "处理异常",
+}
+
+
+def get_application_dir() -> Path:
+    """返回源码运行目录或打包后 exe 所在目录。"""
+    base = Path(sys.executable if getattr(sys, "frozen", False) else __file__)
+    return base.resolve().parent
+
+
+def get_optional_offline_db_path() -> Path:
+    """离线库放在程序旁边，便于独立下载和替换更新。"""
+    return get_application_dir() / OFFLINE_DB_FILE_NAME
 
 
 def get_category_label(category: str) -> str:
     return CATEGORY_LABELS.get(category, category)
+
+
+def get_decision_source_label(source: str) -> str:
+    return DECISION_SOURCE_LABELS.get(source, source)
 
 
 def write_csv_with_labels(file_path: Path, rows: List[Dict[str, Any]]) -> None:
@@ -179,7 +203,13 @@ def write_csv_with_labels(file_path: Path, rows: List[Dict[str, Any]]) -> None:
         writer = csv.writer(fp)
         writer.writerow([CSV_COLUMN_LABELS.get(name, name) for name in fieldnames])
         for row in rows:
-            writer.writerow([row.get(name, "") for name in fieldnames])
+            values = []
+            for name in fieldnames:
+                value = row.get(name, "")
+                if name == "DecisionSource":
+                    value = get_decision_source_label(str(value))
+                values.append(value)
+            writer.writerow(values)
 
 
 class LoaderType(str, Enum):
@@ -294,6 +324,7 @@ class ModTaskOptions:
     dry_run: bool
     use_mcmod: bool
     use_curseforge: bool
+    use_offline_database: bool
     enable_second_pass: bool
     output_dir: Optional[Path] = None
 
@@ -307,6 +338,7 @@ class ServerTaskOptions:
     download_source: str
     use_mcmod: bool
     use_curseforge: bool
+    use_offline_database: bool
     enable_second_pass: bool
     auto_download_java: bool = True
     boot_timeout_mode: str = SERVER_BOOT_TIMEOUT_SMART

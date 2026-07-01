@@ -20,6 +20,7 @@ class ServerBuilderRuntime:
     request_continue_wait: Callable[[str, str, int], bool]
     download_source: str
     use_mcmod: bool
+    use_offline_database: bool
     enable_second_pass: bool
     auto_download_java: bool
     boot_timeout_mode: str

@@ -10,6 +10,7 @@ class ClassificationOptions:
 
     use_mcmod: bool
     use_curseforge: bool = False
+    use_offline_database: bool = False
 
 
 @dataclass(frozen=True)

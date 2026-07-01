@@ -27,6 +27,17 @@ class RemoteClassificationSource(Protocol):
         ...
 
 
+class SupplementalClassificationSource(Protocol):
+    name: str
+    preserve_unknown_result: bool
+
+    def is_enabled(self, options: ClassificationOptions) -> bool:
+        ...
+
+    def lookup(self, jar_path: Path, meta: ModMeta) -> Optional[Classification]:
+        ...
+
+
 class ClassificationStrategy(Protocol):
     metadata_reader: MetadataReader
     local_classifier: LocalClassifier
@@ -35,6 +46,9 @@ class ClassificationStrategy(Protocol):
         ...
 
     def get_remote_sources(self, options: ClassificationOptions) -> Sequence[RemoteClassificationSource]:
+        ...
+
+    def get_supplemental_sources(self, options: ClassificationOptions) -> Sequence[SupplementalClassificationSource]:
         ...
 
     def choose_fallback(

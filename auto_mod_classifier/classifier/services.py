@@ -6,7 +6,13 @@ from pathlib import Path
 from typing import Optional, Sequence
 
 from ..shared import Classification, LoaderType, ModMeta
-from .contracts import ClassificationStrategy, LocalClassifier, MetadataReader, RemoteClassificationSource
+from .contracts import (
+    ClassificationStrategy,
+    LocalClassifier,
+    MetadataReader,
+    RemoteClassificationSource,
+    SupplementalClassificationSource,
+)
 from .models import ClassificationOptions, RemoteResolutionResult
 from .text_utils import ClassifierTextTools
 
@@ -340,6 +346,20 @@ class ModrinthRemoteSource:
         return Classification("unknown", "modrinth", reason, url)
 
 
+class OfflineDatabaseSource:
+    name = "offline-db"
+    preserve_unknown_result = True
+
+    def __init__(self, classifier):
+        self.classifier = classifier
+
+    def is_enabled(self, options: ClassificationOptions) -> bool:
+        return options.use_offline_database and self.classifier.offline_database.is_available()
+
+    def lookup(self, jar_path: Path, meta: ModMeta) -> Optional[Classification]:
+        return self.classifier.offline_database.lookup(jar_path, meta)
+
+
 class McmodRemoteSource:
     name = "mcmod"
     concurrency_group = "mcmod"
@@ -469,13 +489,16 @@ class CurseforgeRemoteSource:
 
 
 class DefaultClassificationStrategy(ClassificationStrategy):
-    """默认筛选策略：本地判定 -> Modrinth -> MC百科 -> CurseForge。"""
+    """默认筛选策略：本地判定 -> 离线库 -> Modrinth -> MC百科 -> CurseForge。"""
 
     def __init__(self, classifier):
         # strategy 的意义是把“怎么判、先查谁、查不到怎么办”集中放在一起。
         self.text_tools = ClassifierTextTools()
         self.metadata_reader = JarMetadataReader(self.text_tools)
         self.local_classifier = DefaultLocalClassifier(self.text_tools)
+        self.supplemental_sources: list[SupplementalClassificationSource] = [
+            OfflineDatabaseSource(classifier),
+        ]
         self.remote_sources: list[RemoteClassificationSource] = [
             ModrinthRemoteSource(classifier),
             McmodRemoteSource(classifier),
@@ -487,6 +510,9 @@ class DefaultClassificationStrategy(ClassificationStrategy):
 
     def get_remote_sources(self, options: ClassificationOptions) -> Sequence[RemoteClassificationSource]:
         return [source for source in self.remote_sources if source.is_enabled(options)]
+
+    def get_supplemental_sources(self, options: ClassificationOptions) -> Sequence[SupplementalClassificationSource]:
+        return [source for source in self.supplemental_sources if source.is_enabled(options)]
 
     def choose_fallback(
         self,

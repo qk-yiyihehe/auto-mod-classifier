@@ -58,9 +58,21 @@ class ClassificationPipeline:
         def finish_classification(index: int, jar: Path, meta: ModMeta, classification: Classification) -> None:
             finish_row(index, jar, build_mod_result_row(jar, meta, classification))
 
+        def run_supplemental_chain(jar: Path, meta: ModMeta) -> Optional[Classification]:
+            for source in self.strategy.get_supplemental_sources(options):
+                classification = source.lookup(jar, meta)
+                if classification and classification.category != "unknown":
+                    return classification
+            return None
+
         def run_remote_chain(index: int, jar: Path, meta: ModMeta, local: Classification) -> None:
             remote_results: List[RemoteResolutionResult] = []
             try:
+                supplemental = run_supplemental_chain(jar, meta)
+                if supplemental and supplemental.category != "unknown":
+                    finish_classification(index, jar, meta, supplemental)
+                    return
+
                 # 远程来源顺序不写死在这里，而是交给 strategy 决定。
                 for source in self.strategy.get_remote_sources(options):
                     classification = self._run_remote_source(source, remote_queues, meta)
@@ -120,6 +132,7 @@ class ClassificationPipeline:
 
         retry_classifier = ClassifierCore()
         retry_classifier.use_curseforge = options.use_curseforge
+        retry_classifier.use_offline_database = options.use_offline_database
         retry_pipeline = ClassificationPipeline(retry_classifier)
         retry_results = retry_pipeline.classify_jars_parallel(
             [row["Path"] for row in unknown_rows],
@@ -189,13 +202,18 @@ def classify_jars_parallel(
     jar_files: Sequence[Path],
     use_mcmod: bool,
     use_curseforge: bool = False,
+    use_offline_database: bool = False,
     progress_callback: Optional[Callable[[int, int, Path], None]] = None,
     result_callback: Optional[Callable[[int, int, Path, Dict[str, Any]], None]] = None,
 ) -> List[Dict[str, Any]]:
     pipeline = ClassificationPipeline(classifier)
     return pipeline.classify_jars_parallel(
         jar_files,
-        ClassificationOptions(use_mcmod=use_mcmod, use_curseforge=use_curseforge),
+        ClassificationOptions(
+            use_mcmod=use_mcmod,
+            use_curseforge=use_curseforge,
+            use_offline_database=use_offline_database,
+        ),
         progress_callback=progress_callback,
         result_callback=result_callback,
     )
@@ -205,13 +223,18 @@ def rerun_unknown_classifications(
     rows: List[Dict[str, Any]],
     use_mcmod: bool,
     use_curseforge: bool = False,
+    use_offline_database: bool = False,
     progress_callback: Optional[Callable[[int, int, Path], None]] = None,
     result_callback: Optional[Callable[[int, int, Path, Dict[str, Any]], None]] = None,
 ) -> int:
     pipeline = ClassificationPipeline(ClassifierCore())
     return pipeline.rerun_unknown_classifications(
         rows,
-        ClassificationOptions(use_mcmod=use_mcmod, use_curseforge=use_curseforge),
+        ClassificationOptions(
+            use_mcmod=use_mcmod,
+            use_curseforge=use_curseforge,
+            use_offline_database=use_offline_database,
+        ),
         progress_callback=progress_callback,
         result_callback=result_callback,
     )

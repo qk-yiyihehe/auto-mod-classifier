@@ -20,6 +20,7 @@ class LegacyModScanService:
         try:
             classifier = ClassifierCore()
             classifier.use_curseforge = request.use_curseforge
+            classifier.use_offline_database = request.use_offline_database
             classifier.browser_warning_callback = lambda message: emit("warning", message)
             set_runtime_ref(classifier)
 
@@ -40,6 +41,11 @@ class LegacyModScanService:
             worker_count = get_classification_worker_count(len(jar_files))
             if len(jar_files) > 1:
                 emit("log", f"联网分类使用 {worker_count} 个并发线程")
+            if request.use_offline_database:
+                if classifier.offline_database.is_available():
+                    emit("log", f"已启用本地离线库优先查询：{classifier.offline_database.db_path}")
+                else:
+                    emit("log", "已启用本地离线库优先查询，但程序目录旁未找到 db.sqlite，本次自动回退到联网查询。")
 
             first_span = 72 if request.enable_second_pass else 88
 
@@ -57,6 +63,7 @@ class LegacyModScanService:
                 jar_files,
                 request.use_mcmod,
                 request.use_curseforge,
+                request.use_offline_database,
                 progress_callback=first_pass_progress,
                 result_callback=first_pass_result,
             )
@@ -85,6 +92,7 @@ class LegacyModScanService:
                         results,
                         request.use_mcmod,
                         request.use_curseforge,
+                        request.use_offline_database,
                         progress_callback=second_pass_progress,
                         result_callback=second_pass_result,
                     )
@@ -195,6 +203,7 @@ class LegacyServerBuildService:
             emit("log", "正在初始化一键开服后端流程…")
             classifier = ClassifierCore()
             classifier.use_curseforge = request.use_curseforge
+            classifier.use_offline_database = request.use_offline_database
             classifier.browser_warning_callback = lambda message: emit("warning", message)
             set_runtime_ref(classifier)
 
@@ -210,6 +219,7 @@ class LegacyServerBuildService:
                 request_continue_wait=request_continue_wait,
                 download_source=request.download_source,
                 use_mcmod=request.use_mcmod,
+                use_offline_database=request.use_offline_database,
                 enable_second_pass=request.enable_second_pass,
                 auto_download_java=request.auto_download_java,
                 boot_timeout_mode=request.boot_timeout_mode,

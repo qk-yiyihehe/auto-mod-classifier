@@ -1356,6 +1356,11 @@ class ServerInstallService:
         worker_count = get_classification_worker_count(total)
         if total > 1:
             self.common.log_line(f"联网分类使用 {worker_count} 个并发线程。")
+        if getattr(self.runtime.classifier, "use_offline_database", False):
+            if self.runtime.classifier.offline_database.is_available():
+                self.common.log_line(f"已启用本地离线库优先查询：{self.runtime.classifier.offline_database.db_path}")
+            else:
+                self.common.log_line("已启用本地离线库优先查询，但程序目录旁未找到 db.sqlite，本次自动回退到联网查询。")
 
         first_span = 6 if self.runtime.enable_second_pass else 9
 
@@ -1372,6 +1377,7 @@ class ServerInstallService:
             jar_files,
             self.runtime.use_mcmod,
             getattr(self.runtime.classifier, "use_curseforge", False),
+            getattr(self.runtime.classifier, "use_offline_database", False),
             progress_callback=first_pass_progress,
             result_callback=first_pass_result,
         )
@@ -1398,6 +1404,7 @@ class ServerInstallService:
                     results,
                     self.runtime.use_mcmod,
                     getattr(self.runtime.classifier, "use_curseforge", False),
+                    getattr(self.runtime.classifier, "use_offline_database", False),
                     progress_callback=second_pass_progress,
                     result_callback=second_pass_result,
                 )

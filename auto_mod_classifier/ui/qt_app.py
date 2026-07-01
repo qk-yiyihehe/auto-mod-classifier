@@ -43,11 +43,14 @@ from ..shared import (
     DOWNLOAD_SOURCE_SMART,
     MOD_REPORT_BASENAME,
     ModTaskOptions,
+    OFFLINE_DB_FILE_NAME,
     ReviewItem,
     SERVER_BOOT_TIMEOUT_SMART,
     ServerTaskOptions,
     TaskStage,
     VersionCandidate,
+    get_decision_source_label,
+    get_optional_offline_db_path,
     get_category_label,
 )
 from ..tasks import run_mod_task, run_server_task
@@ -70,6 +73,7 @@ from .qt_widgets import populate_result_row
 SETTINGS_FILE_PATH = Path(__file__).resolve().parents[2] / "auto_mod_classifier_settings.json"
 DEFAULT_UI_SETTINGS: Dict[str, Any] = {
     "filter_dry_run": False,
+    "filter_use_offline_database": False,
     "filter_use_mcmod": True,
     "filter_use_curseforge": False,
     "filter_second_pass": False,
@@ -274,6 +278,7 @@ class App(FluentWindow):
         settings_widgets = self._require_settings_widgets()
         data = self._settings_data
         settings_widgets.filter_dry_run_checkbox.setChecked(bool(data.get("filter_dry_run", False)))
+        settings_widgets.filter_use_offline_db_checkbox.setChecked(bool(data.get("filter_use_offline_database", False)))
         settings_widgets.filter_use_mcmod_checkbox.setChecked(bool(data.get("filter_use_mcmod", True)))
         settings_widgets.filter_use_cf_checkbox.setChecked(bool(data.get("filter_use_curseforge", False)))
         settings_widgets.filter_second_pass_checkbox.setChecked(bool(data.get("filter_second_pass", False)))
@@ -296,6 +301,7 @@ class App(FluentWindow):
         settings_widgets = self._require_settings_widgets()
         return {
             "filter_dry_run": settings_widgets.filter_dry_run_checkbox.isChecked(),
+            "filter_use_offline_database": settings_widgets.filter_use_offline_db_checkbox.isChecked(),
             "filter_use_mcmod": settings_widgets.filter_use_mcmod_checkbox.isChecked(),
             "filter_use_curseforge": settings_widgets.filter_use_cf_checkbox.isChecked(),
             "filter_second_pass": settings_widgets.filter_second_pass_checkbox.isChecked(),
@@ -491,10 +497,13 @@ class App(FluentWindow):
             output_dir=Path(output_text) if output_text else None,
             download_source=self.resolve_download_source(settings_widgets.server_download_source_combo),
             dry_run=settings_widgets.filter_dry_run_checkbox.isChecked(),
+            use_offline_database=settings_widgets.filter_use_offline_db_checkbox.isChecked(),
             use_mcmod=settings_widgets.filter_use_mcmod_checkbox.isChecked(),
             use_curseforge=settings_widgets.filter_use_cf_checkbox.isChecked(),
             enable_second_pass=settings_widgets.filter_second_pass_checkbox.isChecked(),
         )
+        if options.use_offline_database and not get_optional_offline_db_path().exists():
+            self.append_log("mod", f"未在程序目录旁找到可选离线库：{OFFLINE_DB_FILE_NAME}，本次会自动继续走联网查询。")
         self.worker_thread = threading.Thread(
             target=run_mod_task,
             args=(
@@ -544,6 +553,7 @@ class App(FluentWindow):
             client_dir=source_path,
             output_dir=Path(output_text),
             download_source=self.resolve_download_source(settings_widgets.server_download_source_combo),
+            use_offline_database=settings_widgets.filter_use_offline_db_checkbox.isChecked(),
             use_mcmod=settings_widgets.filter_use_mcmod_checkbox.isChecked(),
             use_curseforge=settings_widgets.filter_use_cf_checkbox.isChecked(),
             enable_second_pass=settings_widgets.filter_second_pass_checkbox.isChecked(),
@@ -552,6 +562,8 @@ class App(FluentWindow):
                 settings_widgets.server_boot_timeout_combo.currentData() or SERVER_BOOT_TIMEOUT_SMART
             ),
         )
+        if options.use_offline_database and not get_optional_offline_db_path().exists():
+            self.append_log("server", f"未在程序目录旁找到可选离线库：{OFFLINE_DB_FILE_NAME}，本次会自动继续走联网查询。")
         self.worker_thread = threading.Thread(
             target=run_server_task,
             args=(
@@ -940,7 +952,7 @@ class App(FluentWindow):
                 [
                     str(row.get("FileName", "")),
                     get_category_label(str(row.get("Category", ""))),
-                    str(row.get("DecisionSource", "")),
+                    get_decision_source_label(str(row.get("DecisionSource", ""))),
                     str(row.get("Reason", "")),
                 ],
             )
@@ -1015,7 +1027,7 @@ class App(FluentWindow):
                 [
                     str(row.get("文件名", "")),
                     category_value,
-                    str(row.get("判定来源", "")),
+                    get_decision_source_label(str(row.get("判定来源", ""))),
                     str(row.get("判定原因", "")),
                 ],
             )
