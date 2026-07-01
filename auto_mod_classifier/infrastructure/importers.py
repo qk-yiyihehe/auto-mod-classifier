@@ -123,6 +123,29 @@ def _emit_import_progress(emit, current: int, total: int, *, start: int = 0, spa
     _emit(emit, "progress", start + percent * span)
 
 
+def _wait_download_futures(futures: List[concurrent.futures.Future], total: int, emit, task_label: str, *, progress_start: int, progress_span: int) -> None:
+    """并发下载时尽量等待所有任务结束，最后再统一汇总失败项。"""
+    completed = 0
+    failures: List[str] = []
+    for future in concurrent.futures.as_completed(futures):
+        try:
+            future.result()
+        except Exception as exc:
+            failures.append(str(exc))
+        finally:
+            completed += 1
+            _emit(emit, "status", f"正在下载 {task_label}，共 {total} 个…")
+            _emit(emit, "stage", {"stage_key": "scan", "detail": f"正在下载 {task_label}：{completed}/{total}"})
+            _emit_import_progress(emit, completed, total, start=progress_start, span=progress_span)
+
+    if failures:
+        preview = "\n".join(failures[:5])
+        remain = len(failures) - min(len(failures), 5)
+        if remain > 0:
+            preview += f"\n其余 {remain} 个失败项已省略。"
+        raise RuntimeError(f"{task_label} 下载失败，共 {len(failures)} 项：\n{preview}")
+
+
 def _verify_download_hash(file_path: Path, hashes: Dict[str, str]) -> None:
     """优先校验 sha512 / sha1，避免镜像异常时导入脏文件。"""
     supported = [name for name in ("sha512", "sha1") if hashes.get(name)]
@@ -394,13 +417,14 @@ class MrpackSourceImporter:
             with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
                 for item in files:
                     futures.append(executor.submit(_download_file, item))
-                completed = 0
-                for future in concurrent.futures.as_completed(futures):
-                    future.result()
-                    completed += 1
-                    _emit(emit, "status", f"正在下载 MRPACK 文件，共 {len(files)} 个…")
-                    _emit(emit, "stage", {"stage_key": "scan", "detail": f"正在下载 MRPACK 文件：{completed}/{len(files)}"})
-                    _emit_import_progress(emit, completed, len(files), start=progress_start, span=progress_span)
+                _wait_download_futures(
+                    futures,
+                    len(files),
+                    emit,
+                    "MRPACK 文件",
+                    progress_start=progress_start,
+                    progress_span=progress_span,
+                )
             _emit(emit, "status", "MRPACK 文件下载完成，正在整理目录…")
             _emit(emit, "stage", {"stage_key": "scan", "detail": "MRPACK 文件下载完成，正在整理目录…"})
         finally:
@@ -584,13 +608,14 @@ class ZipModpackSourceImporter:
                 with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
                     for item in normalized_files:
                         futures.append(executor.submit(_download_file, item))
-                    completed = 0
-                    for future in concurrent.futures.as_completed(futures):
-                        future.result()
-                        completed += 1
-                        _emit(emit, "status", f"正在下载 CurseForge 文件，共 {len(normalized_files)} 个…")
-                        _emit(emit, "stage", {"stage_key": "scan", "detail": f"正在下载 CurseForge 文件：{completed}/{len(normalized_files)}"})
-                        _emit_import_progress(emit, completed, len(normalized_files), start=progress_start, span=progress_span)
+                    _wait_download_futures(
+                        futures,
+                        len(normalized_files),
+                        emit,
+                        "CurseForge 文件",
+                        progress_start=progress_start,
+                        progress_span=progress_span,
+                    )
                 _emit(emit, "status", "CurseForge 文件下载完成，正在整理客户端目录…")
                 _emit(emit, "stage", {"stage_key": "scan", "detail": "CurseForge 文件下载完成，正在整理客户端目录…"})
             finally:

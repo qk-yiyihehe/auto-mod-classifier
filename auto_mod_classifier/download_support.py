@@ -25,11 +25,14 @@ from .shared import (
 DEFAULT_DOWNLOAD_WORKERS = 6
 DEFAULT_DOWNLOAD_TIMEOUT_SECONDS = 15
 DEFAULT_METADATA_TIMEOUT_SECONDS = 12
+DEFAULT_REQUEST_RETRY_ROUNDS = 3
 _DOWNLOAD_CHUNK_SIZE = 64 * 1024
 _PROGRESS_UPDATE_INTERVAL_SECONDS = 0.15
 _PROGRESS_SAMPLE_WINDOW_SECONDS = 2.0
 _ATTEMPT_SUCCESS_CACHE_TTL_SECONDS = 300.0
 _ATTEMPT_FAILURE_CACHE_TTL_SECONDS = 45.0
+_RETRY_BASE_DELAY_SECONDS = 0.8
+_RETRY_MAX_DELAY_SECONDS = 2.5
 _SMART_RESOURCE_MOD_PLATFORM = "mod-platform"
 _SMART_RESOURCE_SERVER_DEPENDENCY = "server-dependency"
 _SMART_RESOURCE_GENERIC = "generic"
@@ -368,6 +371,10 @@ def _format_exception_short(exc: Exception) -> str:
     return text or exc.__class__.__name__
 
 
+def _build_retry_delay_seconds(round_index: int) -> float:
+    return min(_RETRY_BASE_DELAY_SECONDS * (round_index + 1), _RETRY_MAX_DELAY_SECONDS)
+
+
 class DownloadStatsReporter:
     """聚合多个下载任务的网速和线程状态，给界面做实时展示。"""
 
@@ -449,32 +456,55 @@ class DownloadStatsReporter:
         self._emit_text(text)
 
 
-def _fetch_with_attempts(url: str, download_source: str, timeout: int, parser: Callable[[bytes], Any]) -> Any:
+def _fetch_with_attempts(
+    url: str,
+    download_source: str,
+    timeout: int,
+    parser: Callable[[bytes], Any],
+    retry_rounds: int = DEFAULT_REQUEST_RETRY_ROUNDS,
+) -> Any:
+    total_rounds = max(1, int(retry_rounds))
     last_error: Optional[Exception] = None
-    attempts = build_download_attempts(url, download_source)
-    if not attempts:
-        raise RuntimeError("未提供可用下载地址。")
 
-    for attempt in attempts:
-        try:
-            req = urllib.request.Request(attempt.url, headers={"User-Agent": USER_AGENT})
-            started_at = time.monotonic()
-            with _open_request(req, attempt.route_code, timeout=timeout) as resp:
-                raw = resp.read()
-            _record_attempt_score(attempt, time.monotonic() - started_at)
-            return parser(raw)
-        except Exception as exc:
-            last_error = exc
-            _record_attempt_failure(attempt)
-    raise RuntimeError(f"获取内容失败：{url}\n{last_error}")
+    for round_index in range(total_rounds):
+        attempts = build_download_attempts(url, download_source)
+        if not attempts:
+            raise RuntimeError("未提供可用下载地址。")
+
+        for attempt in attempts:
+            try:
+                req = urllib.request.Request(attempt.url, headers={"User-Agent": USER_AGENT})
+                started_at = time.monotonic()
+                with _open_request(req, attempt.route_code, timeout=timeout) as resp:
+                    raw = resp.read()
+                _record_attempt_score(attempt, time.monotonic() - started_at)
+                return parser(raw)
+            except Exception as exc:
+                last_error = exc
+                _record_attempt_failure(attempt)
+
+        if round_index + 1 < total_rounds:
+            time.sleep(_build_retry_delay_seconds(round_index))
+
+    raise RuntimeError(f"获取内容失败（已重试 {total_rounds} 轮）：{url}\n{last_error}")
 
 
-def http_get_text(url: str, download_source: str, timeout: int = DEFAULT_METADATA_TIMEOUT_SECONDS) -> str:
-    return str(_fetch_with_attempts(url, download_source, timeout, lambda raw: raw.decode("utf-8", errors="ignore")))
+def http_get_text(
+    url: str,
+    download_source: str,
+    timeout: int = DEFAULT_METADATA_TIMEOUT_SECONDS,
+    retry_rounds: int = DEFAULT_REQUEST_RETRY_ROUNDS,
+) -> str:
+    return str(_fetch_with_attempts(url, download_source, timeout, lambda raw: raw.decode("utf-8", errors="ignore"), retry_rounds))
 
 
-def http_get_json(url: str, download_source: str, timeout: int = DEFAULT_METADATA_TIMEOUT_SECONDS) -> Any:
-    return _fetch_with_attempts(url, download_source, timeout, lambda raw: json.loads(raw.decode("utf-8")))
+def http_get_json(
+    url: str,
+    download_source: str,
+    timeout: int = DEFAULT_METADATA_TIMEOUT_SECONDS,
+    retry_rounds: int = DEFAULT_REQUEST_RETRY_ROUNDS,
+) -> Any:
+    return _fetch_with_attempts(url, download_source, timeout, lambda raw: json.loads(raw.decode("utf-8")), retry_rounds)
 
 
 def http_download(
@@ -486,13 +516,10 @@ def http_download(
     display_name: Optional[str] = None,
     log_callback: Optional[Callable[[str], None]] = None,
     log_success: bool = True,
+    retry_rounds: int = DEFAULT_REQUEST_RETRY_ROUNDS,
 ) -> None:
     """下载单个文件，支持镜像回退、直连/代理双路线、进度统计和原子替换。"""
     destination.parent.mkdir(parents=True, exist_ok=True)
-    attempts = build_download_attempts(urls, download_source)
-    if not attempts:
-        raise RuntimeError("未提供可用下载地址。")
-
     file_label = display_name or destination.name
     temp_path = destination.with_name(destination.name + ".part")
     if temp_path.exists():
@@ -504,43 +531,56 @@ def http_download(
             reporter.start_file()
             file_started = True
 
+        total_rounds = max(1, int(retry_rounds))
         last_error: Optional[Exception] = None
-        for index, attempt in enumerate(attempts, start=1):
-            try:
-                req = urllib.request.Request(attempt.url, headers={"User-Agent": USER_AGENT})
-                started_at = time.monotonic()
-                first_chunk_at: Optional[float] = None
-                with _open_request(req, attempt.route_code, timeout=timeout) as resp:
-                    with temp_path.open("wb") as fp:
-                        while True:
-                            chunk = resp.read(_DOWNLOAD_CHUNK_SIZE)
-                            if not chunk:
-                                break
-                            if first_chunk_at is None:
-                                first_chunk_at = time.monotonic()
-                            fp.write(chunk)
-                            if reporter is not None:
-                                reporter.add_bytes(len(chunk))
-                first_response_seconds = (first_chunk_at or time.monotonic()) - started_at
-                _record_attempt_score(attempt, first_response_seconds)
-                temp_path.replace(destination)
-                if log_callback is not None and log_success:
-                    log_callback(f"[下载成功] {file_label} | {attempt.display_label}")
-                if reporter is not None:
-                    reporter.finish_file()
-                    file_started = False
-                return
-            except Exception as exc:
-                last_error = exc
-                _record_attempt_failure(attempt)
-                if temp_path.exists():
-                    temp_path.unlink()
-                if log_callback is not None and index < len(attempts):
-                    log_callback(
-                        f"[切换下载路线] {file_label} | {attempt.display_label} 失败：{_format_exception_short(exc)}，改试下一条。"
-                    )
+        for round_index in range(total_rounds):
+            attempts = build_download_attempts(urls, download_source)
+            if not attempts:
+                raise RuntimeError("未提供可用下载地址。")
 
-        raise RuntimeError(f"下载失败：{file_label}\n{_format_exception_short(last_error or RuntimeError('未知错误'))}")
+            for index, attempt in enumerate(attempts, start=1):
+                try:
+                    req = urllib.request.Request(attempt.url, headers={"User-Agent": USER_AGENT})
+                    started_at = time.monotonic()
+                    first_chunk_at: Optional[float] = None
+                    with _open_request(req, attempt.route_code, timeout=timeout) as resp:
+                        with temp_path.open("wb") as fp:
+                            while True:
+                                chunk = resp.read(_DOWNLOAD_CHUNK_SIZE)
+                                if not chunk:
+                                    break
+                                if first_chunk_at is None:
+                                    first_chunk_at = time.monotonic()
+                                fp.write(chunk)
+                                if reporter is not None:
+                                    reporter.add_bytes(len(chunk))
+                    first_response_seconds = (first_chunk_at or time.monotonic()) - started_at
+                    _record_attempt_score(attempt, first_response_seconds)
+                    temp_path.replace(destination)
+                    if log_callback is not None and log_success:
+                        log_callback(f"[下载成功] {file_label} | {attempt.display_label}")
+                    if reporter is not None:
+                        reporter.finish_file()
+                        file_started = False
+                    return
+                except Exception as exc:
+                    last_error = exc
+                    _record_attempt_failure(attempt)
+                    if temp_path.exists():
+                        temp_path.unlink()
+                    if log_callback is not None and index < len(attempts):
+                        log_callback(
+                            f"[切换下载路线] {file_label} | {attempt.display_label} 失败：{_format_exception_short(exc)}，改试下一条。"
+                        )
+
+            if round_index + 1 < total_rounds:
+                if log_callback is not None:
+                    log_callback(f"[重试下载] {file_label} | 当前下载路线全部失败，准备重试第 {round_index + 2}/{total_rounds} 轮。")
+                time.sleep(_build_retry_delay_seconds(round_index))
+
+        raise RuntimeError(
+            f"下载失败（已重试 {total_rounds} 轮）：{file_label}\n{_format_exception_short(last_error or RuntimeError('未知错误'))}"
+        )
     except Exception:
         if file_started and reporter is not None:
             reporter.fail_file()
