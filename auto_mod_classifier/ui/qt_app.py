@@ -185,6 +185,18 @@ class App(FluentWindow):
         width = min(1180, max(1040, int(available.width() * 0.78)))
         height = min(700, max(600, int(available.height() * 0.68)))
         self.resize(width, height)
+        self._center_on_screen(screen)
+
+    def _center_on_screen(self, screen) -> None:
+        if screen is None:
+            return
+        available = screen.availableGeometry()
+        frame = self.frameGeometry()
+        frame.moveCenter(available.center())
+        target_top_left = frame.topLeft()
+        target_x = max(available.left(), min(target_top_left.x(), available.right() - frame.width() + 1))
+        target_y = max(available.top(), min(target_top_left.y(), available.bottom() - frame.height() + 1))
+        self.move(target_x, target_y)
 
     def _build_pages(self) -> None:
         page_factory = QtPageFactory(self)
