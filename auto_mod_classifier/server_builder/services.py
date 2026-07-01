@@ -271,7 +271,7 @@ def _append_client_only_suspects(
     if not client_only_pattern.search(snippet_text):
         return
 
-    _add_failure_finding(findings_map, "client-only", "日志里出现了 **net/minecraft/client/** 相关类，这通常是把只适合客户端的模组放进了服务端。")
+    _add_failure_finding(findings_map, "client-only", "日志里出现了 **net/minecraft/client/** 相关类。")
     if not mod_results:
         return
 
@@ -289,27 +289,23 @@ def _append_client_only_suspects(
 
     if clue_rows:
         labels = "、".join(_format_failure_mod_label(row) for row in clue_rows[:4])
-        _add_failure_finding(findings_map, "client-only", f"日志线索优先指向这些已复制模组：{labels}。")
-        for row in clue_rows[:3]:
-            detail = _format_failure_mod_reason(row)
-            _add_failure_finding(findings_map, "client-only", f"优先检查 {_format_failure_mod_label(row)}。{detail}".rstrip())
+        _add_failure_finding(findings_map, "client-only", f"疑似纯客户端模组：{labels}。")
+        return
 
     remaining_client_only = [
         row for row in selected_client_only_rows if row not in clue_rows
     ]
     if remaining_client_only:
         labels = "、".join(_format_failure_mod_label(row) for row in remaining_client_only[:4])
-        _add_failure_finding(findings_map, "client-only", f"这些模组已经被自动识别为 **纯客户端**，但这次仍被复制进了服务端：{labels}。")
-        for row in remaining_client_only[:2]:
-            detail = _format_failure_mod_reason(row)
-            _add_failure_finding(findings_map, "client-only", f"建议先移出 {_format_failure_mod_label(row)} 再重试。{detail}".rstrip())
+        _add_failure_finding(findings_map, "client-only", f"疑似纯客户端模组：{labels}。")
+        return
 
     remaining_unknown = [
         row for row in selected_unknown_rows if row not in clue_rows and row not in remaining_client_only
     ]
     if remaining_unknown:
         labels = "、".join(_format_failure_mod_label(row) for row in remaining_unknown[:4])
-        _add_failure_finding(findings_map, "client-only", f"这些已复制模组还没被完全确认，但带有明显客户端线索：{labels}。")
+        _add_failure_finding(findings_map, "client-only", f"疑似纯客户端模组：{labels}。")
 
 
 def collect_server_failure_context(
@@ -384,9 +380,32 @@ def collect_server_failure_context(
         elif actual:
             _add_failure_finding(findings_map, "dependency", f"当前检测到的版本是 **{actual}**，前置版本不够。")
 
+    fabric_dependency_pattern = re.compile(
+        r"Mod\s+(?P<requester>[A-Za-z0-9_.\-]+)\s+requires\s+(?P<mod>[A-Za-z0-9_.\-]+)\s+(?P<expected>[^\s,;]+)"
+        r"(?:\s+or later)?(?:.*?(?:but\s+(?:only\s+)?has|but\s+found|found)\s+(?P<actual>[^\s,;]+))?",
+        re.IGNORECASE,
+    )
+    for match in fabric_dependency_pattern.finditer(snippet_text):
+        requester = _normalize_failure_mod_name(match.group("requester"))
+        mod_name = _normalize_failure_mod_name(match.group("mod"))
+        expected = _normalize_failure_text(match.group("expected"))
+        actual = _normalize_failure_text(match.group("actual"))
+        if not requester or not mod_name or requester.lower() == mod_name.lower():
+            continue
+        platform_name = _PLATFORM_NAMES.get(mod_name.lower())
+        if platform_name:
+            _add_failure_finding(findings_map, "platform-version", f"**{requester}** 需要 **{platform_name} {expected}**。")
+            if actual:
+                _add_failure_finding(findings_map, "platform-version", f"当前环境实际是 **{actual}**。")
+            continue
+        _add_failure_finding(findings_map, "dependency", f"**{requester}** 需要 **{mod_name} {expected}**。")
+        if actual:
+            _add_failure_finding(findings_map, "dependency", f"当前检测到的版本是 **{actual}**，前置版本不够。")
+
     generic_dependency_patterns = (
         re.compile(r"could not find required mod:?\s+'?(?P<mod>[A-Za-z0-9_.\-]+)'?", re.IGNORECASE),
         re.compile(r"missing dependency:?\s+'?(?P<mod>[A-Za-z0-9_.\-]+)'?", re.IGNORECASE),
+        re.compile(r"requires?\s+mod:?\s+'?(?P<mod>[A-Za-z0-9_.\-]+)'?\s+which\s+is\s+missing", re.IGNORECASE),
     )
     for pattern in generic_dependency_patterns:
         for match in pattern.finditer(snippet_text):
@@ -394,10 +413,26 @@ def collect_server_failure_context(
             if mod_name:
                 _add_failure_finding(findings_map, "dependency", f"服务端里没有找到 **{mod_name}**。")
 
+    forge_missing_dependency_pattern = re.compile(
+        r"Missing mandatory dependencies:?\s*(?P<requester>[A-Za-z0-9_.\-]+)\s+requires\s+(?P<mod>[A-Za-z0-9_.\-]+)(?:\s+version\s+(?P<expected>[^\s,;]+))?",
+        re.IGNORECASE,
+    )
+    for match in forge_missing_dependency_pattern.finditer(snippet_text):
+        requester = _normalize_failure_mod_name(match.group("requester"))
+        mod_name = _normalize_failure_mod_name(match.group("mod"))
+        expected = _normalize_failure_text(match.group("expected"))
+        if requester and mod_name:
+            requirement = f"{mod_name} {expected}".strip()
+            _add_failure_finding(findings_map, "dependency", f"**{requester}** 需要 **{requirement}**。")
+            _add_failure_finding(findings_map, "dependency", f"当前没有检测到 **{mod_name}**，这个前置还没装上。")
+
     conflict_patterns = (
         re.compile(r"duplicate mod(?:s)?\s+'?(?P<mod>[A-Za-z0-9_.\-]+)'?", re.IGNORECASE),
         re.compile(r"found a duplicate mod\s+'?(?P<mod>[A-Za-z0-9_.\-]+)'?", re.IGNORECASE),
         re.compile(r"mod\s+'(?P<left>[^']+)'\s+conflicts?\s+with\s+mod\s+'(?P<right>[^']+)'", re.IGNORECASE),
+        re.compile(r"Mod\s+(?P<left>[A-Za-z0-9_.\-]+)\s+is\s+incompatible\s+with\s+(?P<right>[A-Za-z0-9_.\-]+)", re.IGNORECASE),
+        re.compile(r"Conflicting mods found[:\s]+(?P<left>[A-Za-z0-9_.\-]+)\s*(?:,|with)\s*(?P<right>[A-Za-z0-9_.\-]+)", re.IGNORECASE),
+        re.compile(r"mod resolution encountered an incompatible mod set", re.IGNORECASE),
     )
     for pattern in conflict_patterns:
         for match in pattern.finditer(snippet_text):
@@ -405,13 +440,26 @@ def collect_server_failure_context(
             if groups.get("mod"):
                 mod_name = _normalize_failure_mod_name(groups["mod"])
                 _add_failure_finding(findings_map, "conflict", f"服务端里重复出现了 **{mod_name}**，同一个模组可能放了两个版本。")
-            else:
+            elif groups.get("left") and groups.get("right"):
                 left = _normalize_failure_mod_name(groups.get("left", ""))
                 right = _normalize_failure_mod_name(groups.get("right", ""))
                 if left and right:
                     _add_failure_finding(findings_map, "conflict", f"**{left}** 和 **{right}** 不能同时加载。")
+            else:
+                _add_failure_finding(findings_map, "conflict", "日志里出现了 **incompatible mod set**，通常是模组集合里有互斥项。")
     if "conflict" in snippet_text.lower() and "conflict" not in findings_map:
         _add_failure_finding(findings_map, "conflict", "日志里明确提到了 **conflict**，通常是两个模组互斥，或者同一个模组重复放入。")
+
+    fabric_breaks_pattern = re.compile(
+        r"Mod\s+(?P<left>[A-Za-z0-9_.\-]+)\s+breaks\s+(?P<right>[A-Za-z0-9_.\-]+)\s+(?P<expected>[^\s,;]+)",
+        re.IGNORECASE,
+    )
+    for match in fabric_breaks_pattern.finditer(snippet_text):
+        left = _normalize_failure_mod_name(match.group("left"))
+        right = _normalize_failure_mod_name(match.group("right"))
+        expected = _normalize_failure_text(match.group("expected"))
+        if left and right:
+            _add_failure_finding(findings_map, "conflict", f"**{left}** 和 **{right}** 存在版本冲突（日志要求 {expected}）。")
 
     platform_requirement_pattern = re.compile(
         r"(?P<requester>[A-Za-z0-9_.\-]+)\s+requires\s+(?P<platform>minecraft|forge|neoforge|fabric(?:\s+loader)?)\s+(?P<expected>[^\s,;]+)"
@@ -425,6 +473,32 @@ def collect_server_failure_context(
         expected = _normalize_failure_text(match.group("expected"))
         actual = _normalize_failure_text(match.group("actual"))
         _add_failure_finding(findings_map, "platform-version", f"**{requester}** 需要 **{platform_name} {expected}**。")
+        if actual:
+            _add_failure_finding(findings_map, "platform-version", f"当前环境实际是 **{actual}**。")
+
+    fabric_loader_mismatch_pattern = re.compile(
+        r"requires\s+fabric\s+loader\s+(?P<expected>[^\s,;]+)(?:.*?(?:but\s+(?:only\s+)?has|found)\s+(?P<actual>[^\s,;]+))?",
+        re.IGNORECASE,
+    )
+    for match in fabric_loader_mismatch_pattern.finditer(snippet_text):
+        expected = _normalize_failure_text(match.group("expected"))
+        actual = _normalize_failure_text(match.group("actual"))
+        if expected:
+            _add_failure_finding(findings_map, "platform-version", f"当前环境需要 **Fabric Loader {expected}**。")
+        if actual:
+            _add_failure_finding(findings_map, "platform-version", f"当前环境实际是 **{actual}**。")
+
+    forge_loader_mismatch_pattern = re.compile(
+        r"requires\s+(?P<platform>forge|neoforge)\s+(?P<expected>[^\s,;]+)(?:.*?(?:but\s+(?:only\s+)?has|found|is)\s+(?P<actual>[^\s,;]+))?",
+        re.IGNORECASE,
+    )
+    for match in forge_loader_mismatch_pattern.finditer(snippet_text):
+        platform_key = _normalize_failure_text(match.group("platform")).lower()
+        platform_name = _PLATFORM_NAMES.get(platform_key, match.group("platform"))
+        expected = _normalize_failure_text(match.group("expected"))
+        actual = _normalize_failure_text(match.group("actual"))
+        if expected:
+            _add_failure_finding(findings_map, "platform-version", f"当前环境需要 **{platform_name} {expected}**。")
         if actual:
             _add_failure_finding(findings_map, "platform-version", f"当前环境实际是 **{actual}**。")
 

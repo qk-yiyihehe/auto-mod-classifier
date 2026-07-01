@@ -318,9 +318,39 @@ class ServerFailureDiagnosticDialog(QDialog):
         findings_area.setFrameShape(QFrame.NoFrame)
         findings_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         findings_area.setMinimumHeight(210)
+        findings_area.setObjectName("serverFailureFindingsArea")
         apply_themed_style(
             findings_area,
-            lambda: f"background: transparent; border: none;",
+            lambda: f"""
+            QScrollArea#serverFailureFindingsArea {{
+                background: transparent;
+                border: none;
+            }}
+            QScrollArea#serverFailureFindingsArea > QWidget > QWidget {{
+                background: transparent;
+            }}
+            QScrollArea#serverFailureFindingsArea QScrollBar:vertical {{
+                background: transparent;
+                width: 6px;
+                margin: 4px 0;
+            }}
+            QScrollArea#serverFailureFindingsArea QScrollBar::handle:vertical {{
+                background: {qt_theme.SCROLL_HANDLE_BG};
+                min-height: 40px;
+                border-radius: 3px;
+            }}
+            QScrollArea#serverFailureFindingsArea QScrollBar::handle:vertical:hover {{
+                background: {qt_theme.SCROLL_HANDLE_HOVER_BG};
+            }}
+            QScrollArea#serverFailureFindingsArea QScrollBar::add-line:vertical,
+            QScrollArea#serverFailureFindingsArea QScrollBar::sub-line:vertical,
+            QScrollArea#serverFailureFindingsArea QScrollBar::add-page:vertical,
+            QScrollArea#serverFailureFindingsArea QScrollBar::sub-page:vertical {{
+                background: transparent;
+                border: 0;
+                height: 0;
+            }}
+            """,
         )
 
         findings_container = QWidget(findings_area)
@@ -348,14 +378,38 @@ class ServerFailureDiagnosticDialog(QDialog):
         snippet_edit.setReadOnly(True)
         snippet_edit.setPlainText(self._snippet or "未提取到关键报错片段。")
         snippet_edit.setMinimumHeight(180)
+        snippet_edit.setObjectName("serverFailureSnippetEdit")
         apply_themed_style(
             snippet_edit,
             lambda: f"""
-            color: {qt_theme.TEXT_PRIMARY};
-            background-color: {qt_theme.EDITOR_BG};
-            border: 1px solid {qt_theme.BORDER_STRONG};
-            border-radius: {RADIUS_MD}px;
-            font-size: {FONT_SIZE_XS}px;
+            QPlainTextEdit#serverFailureSnippetEdit {{
+                color: {qt_theme.TEXT_PRIMARY};
+                background-color: {qt_theme.EDITOR_BG};
+                border: 1px solid {qt_theme.BORDER_STRONG};
+                border-radius: {RADIUS_MD}px;
+                font-size: {FONT_SIZE_XS}px;
+            }}
+            QPlainTextEdit#serverFailureSnippetEdit QScrollBar:vertical {{
+                background: transparent;
+                width: 6px;
+                margin: 4px 0;
+            }}
+            QPlainTextEdit#serverFailureSnippetEdit QScrollBar::handle:vertical {{
+                background: {qt_theme.SCROLL_HANDLE_BG};
+                min-height: 40px;
+                border-radius: 3px;
+            }}
+            QPlainTextEdit#serverFailureSnippetEdit QScrollBar::handle:vertical:hover {{
+                background: {qt_theme.SCROLL_HANDLE_HOVER_BG};
+            }}
+            QPlainTextEdit#serverFailureSnippetEdit QScrollBar::add-line:vertical,
+            QPlainTextEdit#serverFailureSnippetEdit QScrollBar::sub-line:vertical,
+            QPlainTextEdit#serverFailureSnippetEdit QScrollBar::add-page:vertical,
+            QPlainTextEdit#serverFailureSnippetEdit QScrollBar::sub-page:vertical {{
+                background: transparent;
+                border: 0;
+                height: 0;
+            }}
             """,
         )
         layout.addWidget(snippet_edit, 1)
