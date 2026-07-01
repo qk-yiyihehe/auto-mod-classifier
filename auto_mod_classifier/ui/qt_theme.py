@@ -97,8 +97,6 @@ _PALETTES["dark"]["WARNING_BG_HOVER"] = "rgba(245, 166, 35, 0.16)"
 _PALETTES["dark"]["WARNING_BORDER_HOVER"] = "rgba(245, 166, 35, 0.30)"
 _PALETTES["dark"]["PRIMARY_TEXT"] = "#0A1F16"
 _PALETTES["dark"]["PRIMARY_TEXT_DISABLED"] = "rgba(10, 31, 22, 0.35)"
-_PALETTES["dark"]["ACCENT_BORDER"] = "rgba(61, 214, 140, 0.18)"
-_PALETTES["dark"]["ACCENT_BORDER_HOVER"] = "rgba(61, 214, 140, 0.28)"
 _PALETTES["dark"]["SOFT_BORDER"] = "rgba(61, 214, 140, 0.14)"
 
 _PALETTES["light"]["BUTTON_HOVER_BG"] = "#E9EDF2"
@@ -120,8 +118,6 @@ _PALETTES["light"]["WARNING_BG_HOVER"] = "rgba(245, 166, 35, 0.18)"
 _PALETTES["light"]["WARNING_BORDER_HOVER"] = "rgba(245, 166, 35, 0.45)"
 _PALETTES["light"]["PRIMARY_TEXT"] = "#FFFFFF"
 _PALETTES["light"]["PRIMARY_TEXT_DISABLED"] = "rgba(255, 255, 255, 0.55)"
-_PALETTES["light"]["ACCENT_BORDER"] = "rgba(38, 175, 110, 0.30)"
-_PALETTES["light"]["ACCENT_BORDER_HOVER"] = "rgba(38, 175, 110, 0.45)"
 _PALETTES["light"]["SOFT_BORDER"] = "rgba(38, 175, 110, 0.20)"
 
 _current_palette = "dark"
@@ -159,10 +155,6 @@ ACCENT_BG_SOFT = "rgba(61, 214, 140, 0.08)"
 ACCENT_BG_MEDIUM = "rgba(61, 214, 140, 0.14)"
 
 ACCENT_COLOR = ACCENT_NORMAL
-ACCENT_HOVER_COLOR = ACCENT_HOVER
-ACCENT_PRESSED_COLOR = ACCENT_PRESSED
-ACCENT_DISABLED_COLOR = ACCENT_DISABLED
-ACCENT_SOFT_COLOR = ACCENT_BG_SOFT
 
 # 语义色 —— 状态色，与主题无关
 IDLE_COLOR = "#5C6578"
@@ -266,8 +258,6 @@ def build_window_stylesheet() -> str:
     warning_border_hover = g("WARNING_BORDER_HOVER")
     primary_text = g("PRIMARY_TEXT")
     primary_text_disabled = g("PRIMARY_TEXT_DISABLED")
-    accent_border = g("ACCENT_BORDER")
-    accent_border_hover = g("ACCENT_BORDER_HOVER")
     soft_border = g("SOFT_BORDER")
 
     return f"""
@@ -365,17 +355,6 @@ def build_window_stylesheet() -> str:
         border-color: {warning_border_hover};
         color: #F5C04A;
     }}
-    QPushButton#accentButton {{
-        background-color: {ACCENT_BG_SOFT};
-        color: {ACCENT_NORMAL};
-        border: 1px solid {accent_border};
-        font-weight: 500;
-    }}
-    QPushButton#accentButton:hover {{
-        background-color: {ACCENT_BG_MEDIUM};
-        border-color: {accent_border_hover};
-    }}
-
     /* ── 主按钮 ── */
     PrimaryPushButton {{
         background-color: {ACCENT_NORMAL};

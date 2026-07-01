@@ -37,23 +37,15 @@ from .qt_state import (
 )
 from . import qt_theme
 from .qt_theme import (
-    ACCENT_BG_SOFT,
-    ACCENT_NORMAL,
-    ERROR_COLOR,
-    ERROR_SOFT_COLOR,
-    FONT_SIZE_SM,
     FONT_SIZE_XS,
     FONT_SIZE_BASE,
     FONT_SIZE_MD,
-    FONT_SIZE_XL,
     INFO_COLOR,
-    RADIUS_LG,
     RADIUS_MD,
     SPACING_LG,
     SPACING_MD,
     SPACING_SM,
     SPACING_XS,
-    SPACING_XL,
     SUCCESS_COLOR,
     WARNING_COLOR,
     apply_card_style,

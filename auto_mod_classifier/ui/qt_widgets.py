@@ -11,7 +11,6 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QHBoxLayout,
     QLabel,
-    QScrollArea,
     QScrollBar,
     QSizePolicy,
     QTableWidgetItem,
@@ -21,6 +20,8 @@ from PySide6.QtWidgets import (
 from qfluentwidgets import (
     BodyLabel,
     PlainTextEdit,
+    PrimaryPushButton,
+    PushButton,
     ScrollArea,
     StrongBodyLabel,
     TableWidget,
@@ -29,10 +30,8 @@ from qfluentwidgets import (
 
 from . import qt_theme
 from .qt_theme import (
-    ACCENT_BG_SOFT,
     ACCENT_BG_MEDIUM,
     ACCENT_COLOR,
-    ACCENT_NORMAL,
     ERROR_COLOR,
     IDLE_COLOR,
     RUNNING_COLOR,
@@ -40,20 +39,14 @@ from .qt_theme import (
     WARNING_COLOR,
     apply_card_style,
     apply_themed_style,
-    install_shadow,
     FONT_SIZE_XS,
-    FONT_SIZE_SM,
-    FONT_SIZE_BASE,
     FONT_SIZE_MD,
     FONT_SIZE_XL,
     FONT_SIZE_XXL,
-    RADIUS_SM,
     RADIUS_MD,
-    RADIUS_LG,
     SPACING_SM,
     SPACING_MD,
     SPACING_LG,
-    SPACING_XL,
 )
 
 
@@ -517,7 +510,7 @@ class StageBoard(QFrame):
 
 
 class ActionCard(QFrame):
-    """工作台入口卡片 —— 悬停浮起 + 仅左侧细色条点缀。"""
+    """工作台入口卡片。主入口用主按钮，其余入口用普通按钮，避免次级语义漂移。"""
 
     def __init__(
         self,
@@ -538,7 +531,7 @@ class ActionCard(QFrame):
         layout.setContentsMargins(SPACING_LG, SPACING_LG, SPACING_LG, SPACING_LG)
         layout.setSpacing(SPACING_SM)
 
-        from qfluentwidgets import IconWidget, PushButton
+        from qfluentwidgets import IconWidget
 
         header_row = QHBoxLayout()
         header_row.setSpacing(SPACING_SM)
@@ -563,8 +556,10 @@ class ActionCard(QFrame):
         layout.addWidget(dl)
         layout.addStretch(1)
 
-        self.button = PushButton(button_text, self)
-        self.button.setObjectName("accentButton")
+        if primary:
+            self.button = PrimaryPushButton(button_text, self)
+        else:
+            self.button = PushButton(button_text, self)
         layout.addWidget(self.button, 0, Qt.AlignLeft)
 
 def build_result_table(parent: QWidget) -> TableWidget:
