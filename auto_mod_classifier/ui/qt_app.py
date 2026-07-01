@@ -719,6 +719,12 @@ class App(FluentWindow):
                 self._refresh_home_overview(panel_key=panel_key, status="已完成", output=payload.get("output"))
                 self._set_busy_state(False)
                 self.show_success(payload["status"])
+                if panel_key == "server":
+                    themed_information(
+                        self,
+                        "服务端制作完成",
+                        payload.get("summary", payload["status"]),
+                    )
             elif kind == "error":
                 panel.status_label.setText("运行失败")
                 panel.status_dot.set_state("error")
