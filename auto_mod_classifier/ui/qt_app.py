@@ -158,6 +158,7 @@ class App(FluentWindow):
         if app is not None:
             # 跟随系统时，系统明暗切换后要同步刷新自定义配色。
             app.styleHints().colorSchemeChanged.connect(self._on_system_color_scheme_changed)
+        QTimer.singleShot(0, self._recenter_after_show)
 
     def _build_window(self) -> None:
         self.setWindowTitle(APP_TITLE)
@@ -197,6 +198,12 @@ class App(FluentWindow):
         target_x = max(available.left(), min(target_top_left.x(), available.right() - frame.width() + 1))
         target_y = max(available.top(), min(target_top_left.y(), available.bottom() - frame.height() + 1))
         self.move(target_x, target_y)
+
+    def _recenter_after_show(self) -> None:
+        screen = self.screen() or QApplication.primaryScreen()
+        if screen is None:
+            return
+        self._center_on_screen(screen)
 
     def _build_pages(self) -> None:
         page_factory = QtPageFactory(self)
