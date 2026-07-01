@@ -24,6 +24,8 @@ from qfluentwidgets import BodyLabel, CheckBox, PrimaryPushButton, PushButton, S
 from ..shared import ReviewItem, VersionCandidate
 from . import qt_theme
 from .qt_theme import (
+    ACCENT_HOVER,
+    ACCENT_PRESSED,
     ACCENT_NORMAL,
     FONT_SIZE_MD,
     FONT_SIZE_SM,
@@ -57,7 +59,7 @@ def _rgba(color: str, alpha: float) -> str:
 
 
 DIALOG_BUTTON_HEIGHT = 42
-DIALOG_BUTTON_MIN_WIDTH = 116
+DIALOG_BUTTON_MIN_WIDTH = 104
 
 
 def _message_dialog_icon(kind: str) -> Tuple[str, str]:
@@ -74,6 +76,37 @@ def _apply_dialog_button_size(button: PushButton | PrimaryPushButton) -> None:
     """统一弹窗按钮尺寸，避免不同弹窗各自漂移。"""
     button.setFixedHeight(DIALOG_BUTTON_HEIGHT)
     button.setMinimumWidth(DIALOG_BUTTON_MIN_WIDTH)
+
+
+def _apply_dialog_primary_button_style(button: PrimaryPushButton) -> None:
+    """弹窗主按钮强制使用项目主绿色，避免落回组件默认青色。"""
+    apply_themed_style(
+        button,
+        lambda: f"""
+        PrimaryPushButton {{
+            background-color: {ACCENT_NORMAL};
+            color: {qt_theme.PRIMARY_TEXT};
+            border: 1px solid {ACCENT_NORMAL};
+            border-radius: {RADIUS_MD}px;
+            padding: 0 18px;
+            font-size: {FONT_SIZE_SM}px;
+            font-weight: 600;
+        }}
+        PrimaryPushButton:hover {{
+            background-color: {ACCENT_HOVER};
+            border-color: {ACCENT_HOVER};
+        }}
+        PrimaryPushButton:pressed {{
+            background-color: {ACCENT_PRESSED};
+            border-color: {ACCENT_PRESSED};
+        }}
+        PrimaryPushButton:disabled {{
+            background-color: {qt_theme.ACCENT_DISABLED};
+            border-color: transparent;
+            color: {qt_theme.PRIMARY_TEXT_DISABLED};
+        }}
+        """,
+    )
 
 
 class ThemedMessageDialog(QDialog):
@@ -94,8 +127,8 @@ class ThemedMessageDialog(QDialog):
         self.setWindowTitle(title)
         self.setModal(True)
         self.setObjectName("themedMessageDialog")
-        self.resize(560, 220)
-        self.setMinimumWidth(520)
+        self.resize(460, 188)
+        self.setMinimumWidth(420)
 
         apply_themed_style(
             self,
@@ -107,20 +140,20 @@ class ThemedMessageDialog(QDialog):
         )
 
         root_layout = QVBoxLayout(self)
-        root_layout.setContentsMargins(SPACING_LG, SPACING_LG, SPACING_LG, SPACING_LG)
-        root_layout.setSpacing(SPACING_MD)
+        root_layout.setContentsMargins(SPACING_MD + 2, SPACING_MD + 2, SPACING_MD + 2, SPACING_MD + 2)
+        root_layout.setSpacing(SPACING_SM)
 
         content_card = QFrame(self)
         apply_card_style(content_card, "panel")
         content_layout = QGridLayout(content_card)
-        content_layout.setContentsMargins(SPACING_LG, SPACING_LG, SPACING_LG, SPACING_LG)
-        content_layout.setHorizontalSpacing(SPACING_MD)
-        content_layout.setVerticalSpacing(SPACING_SM)
+        content_layout.setContentsMargins(SPACING_MD + 2, SPACING_MD + 2, SPACING_MD + 2, SPACING_MD + 2)
+        content_layout.setHorizontalSpacing(SPACING_SM)
+        content_layout.setVerticalSpacing(6)
 
         icon_text, icon_color = _message_dialog_icon(kind)
         icon_badge = QLabel(icon_text, content_card)
         icon_badge.setAlignment(Qt.AlignCenter)
-        icon_badge.setFixedSize(46, 46)
+        icon_badge.setFixedSize(40, 40)
         icon_badge.setObjectName("messageIconBadge")
         apply_themed_style(
             icon_badge,
@@ -129,8 +162,8 @@ class ThemedMessageDialog(QDialog):
                 color: {"#FFFFFF" if qt_theme.current_palette_name() == "light" else qt_theme.TEXT_PRIMARY};
                 background-color: {icon_color};
                 border: 0;
-                border-radius: 23px;
-                font-size: {FONT_SIZE_XL}px;
+                border-radius: 20px;
+                font-size: {FONT_SIZE_MD}px;
                 font-weight: 700;
             }}
             """,
@@ -140,13 +173,13 @@ class ThemedMessageDialog(QDialog):
         title_label = StrongBodyLabel(title, content_card)
         apply_themed_style(
             title_label,
-            lambda: f"color: {qt_theme.TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_XL}px; font-weight: 700;",
+            lambda: f"color: {qt_theme.TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_MD}px; font-weight: 700;",
         )
         content_layout.addWidget(title_label, 0, 1)
 
         message_label = BodyLabel(message, content_card)
         message_label.setWordWrap(True)
-        apply_label_tone(message_label, level=2, size=FONT_SIZE_MD)
+        apply_label_tone(message_label, level=2, size=FONT_SIZE_SM)
         content_layout.addWidget(message_label, 1, 1)
 
         root_layout.addWidget(content_card)
@@ -163,6 +196,7 @@ class ThemedMessageDialog(QDialog):
 
         confirm_button = PrimaryPushButton(confirm_text, self)
         _apply_dialog_button_size(confirm_button)
+        _apply_dialog_primary_button_style(confirm_button)
         confirm_button.clicked.connect(self._confirm)
         button_row.addWidget(confirm_button)
 
@@ -351,6 +385,7 @@ class VersionSelectionDialog(QDialog):
 
         confirm_button = PrimaryPushButton("确定", self)
         _apply_dialog_button_size(confirm_button)
+        _apply_dialog_primary_button_style(confirm_button)
         confirm_button.clicked.connect(self.confirm)
         button_row.addWidget(confirm_button)
 
@@ -658,6 +693,8 @@ class ChecklistDialog(QDialog):
     def _style_action_button(self, button: PushButton, *, primary: bool) -> None:
         _apply_dialog_button_size(button)
         if primary:
+            if isinstance(button, PrimaryPushButton):
+                _apply_dialog_primary_button_style(button)
             return
 
     def select_all(self) -> None:
