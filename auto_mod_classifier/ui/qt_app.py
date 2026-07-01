@@ -68,22 +68,16 @@ from .qt_widgets import populate_result_row
 
 SETTINGS_FILE_PATH = Path(__file__).resolve().parents[2] / "auto_mod_classifier_settings.json"
 DEFAULT_UI_SETTINGS: Dict[str, Any] = {
-    "filter_download_source": DOWNLOAD_SOURCE_SMART,
     "filter_dry_run": False,
     "filter_use_mcmod": True,
     "filter_use_curseforge": False,
     "filter_second_pass": False,
-    "filter_manual_review": True,
     "server_output_path": "",
     "server_download_source": DOWNLOAD_SOURCE_SMART,
     "java_rule_index": 0,
     "auto_download_java": True,
     "server_boot_timeout_mode": SERVER_BOOT_TIMEOUT_SMART,
-    "cache_path": "",
-    "cache_auto_cleanup": True,
-    "theme_index": 0,
-    "detail_log": True,
-    "animation": True,
+    "theme_index": 2,
 }
 
 
@@ -246,7 +240,7 @@ class App(FluentWindow):
 
     def _theme_from_index(self, index: int) -> Theme:
         theme_map = {0: Theme.DARK, 1: Theme.LIGHT, 2: Theme.AUTO}
-        return theme_map.get(index, Theme.DARK)
+        return theme_map.get(index, Theme.AUTO)
 
     def _load_settings_data(self) -> Dict[str, Any]:
         data = dict(DEFAULT_UI_SETTINGS)
@@ -277,15 +271,10 @@ class App(FluentWindow):
     def _apply_settings_to_widgets(self) -> None:
         settings_widgets = self._require_settings_widgets()
         data = self._settings_data
-        self._set_combo_by_data(
-            settings_widgets.filter_download_source_combo,
-            str(data.get("filter_download_source", DOWNLOAD_SOURCE_SMART)),
-        )
         settings_widgets.filter_dry_run_checkbox.setChecked(bool(data.get("filter_dry_run", False)))
         settings_widgets.filter_use_mcmod_checkbox.setChecked(bool(data.get("filter_use_mcmod", True)))
         settings_widgets.filter_use_cf_checkbox.setChecked(bool(data.get("filter_use_curseforge", False)))
         settings_widgets.filter_second_pass_checkbox.setChecked(bool(data.get("filter_second_pass", False)))
-        settings_widgets.filter_manual_review_checkbox.setChecked(bool(data.get("filter_manual_review", True)))
         settings_widgets.server_output_path_edit.setText(str(data.get("server_output_path", "")))
         self._set_combo_by_data(
             settings_widgets.server_download_source_combo,
@@ -298,22 +287,16 @@ class App(FluentWindow):
             settings_widgets.server_boot_timeout_combo,
             str(data.get("server_boot_timeout_mode", SERVER_BOOT_TIMEOUT_SMART)),
         )
-        settings_widgets.cache_path_edit.setText(str(data.get("cache_path", "")))
-        settings_widgets.cache_auto_cleanup_checkbox.setChecked(bool(data.get("cache_auto_cleanup", True)))
-        theme_index = int(data.get("theme_index", 0))
+        theme_index = int(data.get("theme_index", 2))
         settings_widgets.theme_combo.setCurrentIndex(max(0, min(theme_index, settings_widgets.theme_combo.count() - 1)))
-        settings_widgets.detail_log_checkbox.setChecked(bool(data.get("detail_log", True)))
-        settings_widgets.animation_checkbox.setChecked(bool(data.get("animation", True)))
 
     def _collect_settings_data(self) -> Dict[str, Any]:
         settings_widgets = self._require_settings_widgets()
         return {
-            "filter_download_source": self.resolve_download_source(settings_widgets.filter_download_source_combo),
             "filter_dry_run": settings_widgets.filter_dry_run_checkbox.isChecked(),
             "filter_use_mcmod": settings_widgets.filter_use_mcmod_checkbox.isChecked(),
             "filter_use_curseforge": settings_widgets.filter_use_cf_checkbox.isChecked(),
             "filter_second_pass": settings_widgets.filter_second_pass_checkbox.isChecked(),
-            "filter_manual_review": settings_widgets.filter_manual_review_checkbox.isChecked(),
             "server_output_path": settings_widgets.server_output_path_edit.text().strip(),
             "server_download_source": self.resolve_download_source(settings_widgets.server_download_source_combo),
             "java_rule_index": settings_widgets.java_rule_combo.currentIndex(),
@@ -321,11 +304,7 @@ class App(FluentWindow):
             "server_boot_timeout_mode": str(
                 settings_widgets.server_boot_timeout_combo.currentData() or SERVER_BOOT_TIMEOUT_SMART
             ),
-            "cache_path": settings_widgets.cache_path_edit.text().strip(),
-            "cache_auto_cleanup": settings_widgets.cache_auto_cleanup_checkbox.isChecked(),
             "theme_index": settings_widgets.theme_combo.currentIndex(),
-            "detail_log": settings_widgets.detail_log_checkbox.isChecked(),
-            "animation": settings_widgets.animation_checkbox.isChecked(),
         }
 
     def _apply_theme_visuals(self, theme_mode: Theme) -> None:
@@ -435,10 +414,13 @@ class App(FluentWindow):
             self._require_server_inputs().client_path_edit.setText(selected)
 
     def choose_output_folder(self) -> None:
-        default_dir = self._require_settings_widgets().server_output_path_edit.text().strip()
+        server_inputs = self._require_server_inputs()
+        default_dir = server_inputs.output_path_edit.text().strip()
+        if not default_dir:
+            default_dir = self._require_settings_widgets().server_output_path_edit.text().strip()
         selected = themed_get_existing_directory(self, "选择新的空服务端输出目录", default_dir)
         if selected:
-            self._require_server_inputs().output_path_edit.setText(selected)
+            server_inputs.output_path_edit.setText(selected)
 
     def cleanup_import_cache(self) -> None:
         cleanup_stale_import_workspaces()
@@ -505,7 +487,7 @@ class App(FluentWindow):
         options = ModTaskOptions(
             mods_path=source_path,
             output_dir=Path(output_text) if output_text else None,
-            download_source=self.resolve_download_source(settings_widgets.filter_download_source_combo),
+            download_source=self.resolve_download_source(settings_widgets.server_download_source_combo),
             dry_run=settings_widgets.filter_dry_run_checkbox.isChecked(),
             use_mcmod=settings_widgets.filter_use_mcmod_checkbox.isChecked(),
             use_curseforge=settings_widgets.filter_use_cf_checkbox.isChecked(),

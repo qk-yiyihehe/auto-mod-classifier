@@ -973,8 +973,6 @@ class QtPageFactory:
         # 筛选规则
         f_card, f_l = self._create_card("筛选规则", "影响模组筛选和开服时的模组处理。")
         f_l.setSpacing(SPACING_SM)
-        f_dl = self._build_download_source_combo()
-        self._add_control_row(f_l, "下载源", f_dl)
         f_dry = CheckBox("仅预览模组筛选结果，不移动原文件", f_card)
         f_dry.setChecked(False)
         f_l.addWidget(f_dry)
@@ -982,9 +980,7 @@ class QtPageFactory:
         f_mc.setChecked(True)
         f_cf = CheckBox("查询 CurseForge", f_card)
         f_sp = CheckBox("启用进一步确认", f_card)
-        f_mr = CheckBox("保留手动确认提示", f_card)
-        f_mr.setChecked(True)
-        for cb in (f_mc, f_cf, f_sp, f_mr):
+        for cb in (f_mc, f_cf, f_sp):
             f_l.addWidget(cb)
 
         # 开服默认
@@ -996,7 +992,7 @@ class QtPageFactory:
         apply_input_style(sv_op)
         self._add_control_row(s_l, "默认输出目录", sv_op, "选择输出目录时，会优先定位到这里。")
         sv_dl = self._build_download_source_combo()
-        self._add_control_row(s_l, "默认下载源", sv_dl)
+        self._add_control_row(s_l, "下载源", sv_dl, "模组筛选和一键开服共用这一项下载源设置。")
         jv_rule = ComboBox(s_card)
         for t in ("自动匹配", "优先使用本机 Java", "只使用客户端自带 Java"):
             jv_rule.addItem(t)
@@ -1019,16 +1015,12 @@ class QtPageFactory:
         )
 
         # 缓存
-        c_card, c_l = self._create_card("缓存与存储")
+        c_card, c_l = self._create_card("缓存与存储", "整合包导入缓存保存在系统临时目录。")
         c_l.setSpacing(SPACING_SM)
-        ca_edit = LineEdit(c_card)
-        ca_edit.setPlaceholderText("使用系统临时目录")
-        ca_edit.setClearButtonEnabled(True)
-        apply_input_style(ca_edit)
-        self._add_control_row(c_l, "缓存路径", ca_edit)
-        ca_cb = CheckBox("启动和退出时自动清理缓存", c_card)
-        ca_cb.setChecked(True)
-        c_l.addWidget(ca_cb)
+        cache_hint = BodyLabel("当前版本固定使用系统临时目录，关闭程序时会自动做一次缓存清理。", c_card)
+        cache_hint.setWordWrap(True)
+        apply_label_tone(cache_hint, muted=True, size=FONT_SIZE_XS)
+        c_l.addWidget(cache_hint)
         cl_btn = PushButton("清理整合包缓存", c_card)
         cl_btn.setObjectName("warningButton")
         cl_btn.clicked.connect(self.app.cleanup_import_cache)
@@ -1042,24 +1034,25 @@ class QtPageFactory:
             th_co.addItem(t)
         apply_input_style(th_co)
         th_co.setMaxVisibleItems(3)
-        th_co.setCurrentIndex(0)
+        th_co.setCurrentIndex(2)
         th_co.currentIndexChanged.connect(self.app.on_theme_changed)
         self._add_control_row(i_l, "主题", th_co)
-        # 缩放比例控件先移除：未实现任何缩放逻辑，避免误导
-        dl_cb = CheckBox("显示详细处理记录", i_card)
-        dl_cb.setChecked(True)
-        an_cb = CheckBox("启用界面动效", i_card)
-        an_cb.setChecked(True)
-        i_l.addWidget(dl_cb)
-        i_l.addWidget(an_cb)
 
         # 关于
         a_card, a_l = self._create_card("关于", variant="subtle")
         a_l.setSpacing(SPACING_XS)
-        ver = BodyLabel("版本：3.0 | PySide6 + qfluentwidgets", a_card)
-        ver.setWordWrap(True)
-        apply_label_tone(ver, muted=True, size=FONT_SIZE_XS)
-        a_l.addWidget(ver)
+        intro = BodyLabel("Auto Mod Classifier 3.0", a_card)
+        intro.setWordWrap(True)
+        apply_label_tone(intro, muted=False, size=FONT_SIZE_XS)
+        a_l.addWidget(intro)
+        author = BodyLabel("作者：yiyihehe", a_card)
+        author.setWordWrap(True)
+        apply_label_tone(author, muted=True, size=FONT_SIZE_XS)
+        a_l.addWidget(author)
+        tech = BodyLabel("技术栈：PySide6 + qfluentwidgets", a_card)
+        tech.setWordWrap(True)
+        apply_label_tone(tech, muted=True, size=FONT_SIZE_XS)
+        a_l.addWidget(tech)
 
         action_bar = QWidget(page)
         action_layout = QHBoxLayout(action_bar)
@@ -1088,22 +1081,16 @@ class QtPageFactory:
         return SettingsPageBuild(
             page=page,
             widgets=SettingsWidgets(
-                filter_download_source_combo=f_dl,
                 filter_dry_run_checkbox=f_dry,
                 filter_use_mcmod_checkbox=f_mc,
                 filter_use_cf_checkbox=f_cf,
                 filter_second_pass_checkbox=f_sp,
-                filter_manual_review_checkbox=f_mr,
                 server_output_path_edit=sv_op,
                 server_download_source_combo=sv_dl,
                 java_rule_combo=jv_rule,
                 auto_download_java_checkbox=auto_java_cb,
                 server_boot_timeout_combo=boot_timeout_combo,
-                cache_path_edit=ca_edit,
-                cache_auto_cleanup_checkbox=ca_cb,
                 theme_combo=th_co,
-                detail_log_checkbox=dl_cb,
-                animation_checkbox=an_cb,
                 save_button=save_btn,
                 reset_button=reset_btn,
             ),

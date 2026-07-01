@@ -90,21 +90,15 @@ class ServerInputWidgets:
 
 @dataclass
 class SettingsWidgets:
-    filter_download_source_combo: ComboBox
     filter_dry_run_checkbox: CheckBox
     filter_use_mcmod_checkbox: CheckBox
     filter_use_cf_checkbox: CheckBox
     filter_second_pass_checkbox: CheckBox
-    filter_manual_review_checkbox: CheckBox
     server_output_path_edit: LineEdit
     server_download_source_combo: ComboBox
     java_rule_combo: ComboBox
     auto_download_java_checkbox: CheckBox
     server_boot_timeout_combo: ComboBox
-    cache_path_edit: LineEdit
-    cache_auto_cleanup_checkbox: CheckBox
     theme_combo: ComboBox
-    detail_log_checkbox: CheckBox
-    animation_checkbox: CheckBox
     save_button: PushButton
     reset_button: PushButton
