@@ -99,30 +99,29 @@ def _build_failure_snippet_lines(lines: Sequence[str], interesting_indexes: Sequ
     if not lines:
         return []
     if not interesting_indexes:
-        return list(lines[-min(len(lines), 80):])
+        return list(lines[-min(len(lines), 180):])
 
-    windows: List[Tuple[int, int]] = []
-    for index in interesting_indexes[-4:]:
-        windows.append((max(0, index - 14), min(len(lines), index + 23)))
-    windows.sort()
+    # “关键报错片段”主要是给用户复制到 AI，所以这里优先保留更完整的连续上下文，
+    # 而不是只截几段命中窗口，避免关键信息被省掉。
+    first_anchor = interesting_indexes[max(0, len(interesting_indexes) - 4)]
+    last_anchor = interesting_indexes[-1]
+    start = max(0, first_anchor - 40)
+    end = min(len(lines), last_anchor + 120)
+    desired_length = min(len(lines), 160)
+    current_length = end - start
+    if current_length < desired_length:
+        missing = desired_length - current_length
+        start = max(0, start - missing)
+        current_length = end - start
+        if current_length < desired_length:
+            end = min(len(lines), end + (desired_length - current_length))
+    snippet_lines = list(lines[start:end])
 
-    merged: List[Tuple[int, int]] = []
-    for start, end in windows:
-        if not merged or start > merged[-1][1]:
-            merged.append((start, end))
-        else:
-            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
-
-    snippet_lines: List[str] = []
-    for start, end in merged:
-        if snippet_lines:
-            snippet_lines.append("...")
-        snippet_lines.extend(lines[start:end])
-
-    if len(snippet_lines) <= 90:
+    if len(snippet_lines) <= 200:
         return snippet_lines
-    tail = snippet_lines[-89:]
-    return ["..."] + tail
+    head = snippet_lines[:100]
+    tail = snippet_lines[-99:]
+    return head + ["..."] + tail
 
 
 def _normalize_failure_lookup_key(text: str) -> str:
