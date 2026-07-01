@@ -19,6 +19,7 @@ class OfflineDatabaseMatch:
     modrinth_version: str = ""
     curseforge_project: str = ""
     curseforge_file: str = ""
+    mapped_modrinth_project: str = ""
     forge_mod_id: str = ""
     forge_version: str = ""
     fabric_mod_id: str = ""
@@ -80,6 +81,7 @@ class OfflineModDatabase:
                     mr.version AS modrinth_version,
                     cf.project AS curseforge_project,
                     cf.file AS curseforge_file,
+                    pm.modrinth_project AS mapped_modrinth_project,
                     f.id AS forge_mod_id,
                     f.version AS forge_version,
                     fm.id AS fabric_mod_id,
@@ -87,6 +89,7 @@ class OfflineModDatabase:
                 FROM file base
                 LEFT JOIN modrinth_version mr ON mr.sha1 = base.sha1
                 LEFT JOIN curseforge_file cf ON cf.sha1 = base.sha1
+                LEFT JOIN project_mapping pm ON pm.curseforge_project = cf.project
                 LEFT JOIN forge_mod f ON f.sha1 = base.sha1
                 LEFT JOIN fabric_mod fm ON fm.sha1 = base.sha1
                 WHERE base.sha1 = ?
@@ -106,6 +109,7 @@ class OfflineModDatabase:
             modrinth_version=str(row["modrinth_version"] or "").strip(),
             curseforge_project=str(row["curseforge_project"] or "").strip(),
             curseforge_file=str(row["curseforge_file"] or "").strip(),
+            mapped_modrinth_project=str(row["mapped_modrinth_project"] or "").strip(),
             forge_mod_id=str(row["forge_mod_id"] or "").strip(),
             forge_version=str(row["forge_version"] or "").strip(),
             fabric_mod_id=str(row["fabric_mod_id"] or "").strip(),
@@ -246,6 +250,9 @@ class OfflineModDatabase:
             if modrinth_version:
                 reason_parts[-1] += f" / 版本 {modrinth_version}"
             evidence_url = f"https://modrinth.com/project/{modrinth_project}"
+        elif match.mapped_modrinth_project:
+            reason_parts.append(f"CurseForge 映射到 Modrinth 项目 {match.mapped_modrinth_project}")
+            evidence_url = f"https://modrinth.com/project/{match.mapped_modrinth_project}"
 
         if curseforge_project:
             cf_text = f"CurseForge 项目 {curseforge_project}"

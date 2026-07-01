@@ -18,7 +18,7 @@ class LegacyModScanService:
     ) -> None:
         classifier: Optional[ClassifierCore] = None
         try:
-            classifier = ClassifierCore()
+            classifier = ClassifierCore(download_source=request.download_source)
             classifier.use_curseforge = request.use_curseforge
             classifier.use_offline_database = request.use_offline_database
             classifier.browser_warning_callback = lambda message: emit("warning", message)
@@ -69,6 +69,7 @@ class LegacyModScanService:
                 request.use_mcmod,
                 request.use_curseforge,
                 request.use_offline_database,
+                request.download_source,
                 progress_callback=first_pass_progress,
                 result_callback=first_pass_result,
             )
@@ -98,6 +99,7 @@ class LegacyModScanService:
                         request.use_mcmod,
                         request.use_curseforge,
                         request.use_offline_database,
+                        request.download_source,
                         progress_callback=second_pass_progress,
                         result_callback=second_pass_result,
                     )
@@ -206,7 +208,7 @@ class LegacyServerBuildService:
         classifier: Optional[ClassifierCore] = None
         try:
             emit("log", "正在初始化一键开服后端流程…")
-            classifier = ClassifierCore()
+            classifier = ClassifierCore(download_source=request.download_source)
             classifier.use_curseforge = request.use_curseforge
             classifier.use_offline_database = request.use_offline_database
             classifier.browser_warning_callback = lambda message: emit("warning", message)

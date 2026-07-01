@@ -1,4 +1,5 @@
 from ..shared import *
+from ..download_support import http_get_json as fetch_json_with_download_source
 
 
 class ClassifierNetworkMixin:
@@ -169,6 +170,17 @@ class ClassifierNetworkMixin:
                 except Exception:
                     time.sleep(0.3 * (attempt + 1))
             return last_payload
+
+        value = self.get_cached_value(cache_key, loader)
+        return value if isinstance(value, dict) else None
+
+    def curseforge_json_request(self, cache_key: str, url: str) -> Optional[dict]:
+        def loader() -> Optional[dict]:
+            try:
+                payload = fetch_json_with_download_source(url, getattr(self, "download_source", DOWNLOAD_SOURCE_SMART))
+            except Exception:
+                return None
+            return payload if isinstance(payload, dict) else None
 
         value = self.get_cached_value(cache_key, loader)
         return value if isinstance(value, dict) else None

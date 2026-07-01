@@ -1378,6 +1378,7 @@ class ServerInstallService:
             self.runtime.use_mcmod,
             getattr(self.runtime.classifier, "use_curseforge", False),
             getattr(self.runtime.classifier, "use_offline_database", False),
+            self.runtime.download_source,
             progress_callback=first_pass_progress,
             result_callback=first_pass_result,
         )
@@ -1405,6 +1406,7 @@ class ServerInstallService:
                     self.runtime.use_mcmod,
                     getattr(self.runtime.classifier, "use_curseforge", False),
                     getattr(self.runtime.classifier, "use_offline_database", False),
+                    self.runtime.download_source,
                     progress_callback=second_pass_progress,
                     result_callback=second_pass_result,
                 )

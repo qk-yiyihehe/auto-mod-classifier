@@ -133,6 +133,7 @@ class ClassificationPipeline:
         retry_classifier = ClassifierCore()
         retry_classifier.use_curseforge = options.use_curseforge
         retry_classifier.use_offline_database = options.use_offline_database
+        retry_classifier.download_source = options.download_source
         retry_pipeline = ClassificationPipeline(retry_classifier)
         retry_results = retry_pipeline.classify_jars_parallel(
             [row["Path"] for row in unknown_rows],
@@ -203,9 +204,11 @@ def classify_jars_parallel(
     use_mcmod: bool,
     use_curseforge: bool = False,
     use_offline_database: bool = False,
+    download_source: str = DOWNLOAD_SOURCE_SMART,
     progress_callback: Optional[Callable[[int, int, Path], None]] = None,
     result_callback: Optional[Callable[[int, int, Path, Dict[str, Any]], None]] = None,
 ) -> List[Dict[str, Any]]:
+    classifier.download_source = download_source
     pipeline = ClassificationPipeline(classifier)
     return pipeline.classify_jars_parallel(
         jar_files,
@@ -213,6 +216,7 @@ def classify_jars_parallel(
             use_mcmod=use_mcmod,
             use_curseforge=use_curseforge,
             use_offline_database=use_offline_database,
+            download_source=download_source,
         ),
         progress_callback=progress_callback,
         result_callback=result_callback,
@@ -224,16 +228,18 @@ def rerun_unknown_classifications(
     use_mcmod: bool,
     use_curseforge: bool = False,
     use_offline_database: bool = False,
+    download_source: str = DOWNLOAD_SOURCE_SMART,
     progress_callback: Optional[Callable[[int, int, Path], None]] = None,
     result_callback: Optional[Callable[[int, int, Path, Dict[str, Any]], None]] = None,
 ) -> int:
-    pipeline = ClassificationPipeline(ClassifierCore())
+    pipeline = ClassificationPipeline(ClassifierCore(download_source=download_source))
     return pipeline.rerun_unknown_classifications(
         rows,
         ClassificationOptions(
             use_mcmod=use_mcmod,
             use_curseforge=use_curseforge,
             use_offline_database=use_offline_database,
+            download_source=download_source,
         ),
         progress_callback=progress_callback,
         result_callback=result_callback,

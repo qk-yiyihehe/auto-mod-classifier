@@ -10,8 +10,9 @@ class ClassifierCore(
     ClassifierTextMixin,
     ClassifierNetworkMixin,
 ):
-    def __init__(self, throttle_ms: int = 80):
+    def __init__(self, throttle_ms: int = 80, download_source: str = DOWNLOAD_SOURCE_SMART):
         self.throttle_ms = throttle_ms
+        self.download_source = download_source
         self.cache: Dict[str, object] = {}
         self.cache_lock = threading.Lock()
         self.inflight_requests: Dict[str, threading.Event] = {}

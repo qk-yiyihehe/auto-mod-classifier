@@ -11,6 +11,7 @@ class ClassificationOptions:
     use_mcmod: bool
     use_curseforge: bool = False
     use_offline_database: bool = False
+    download_source: str = "smart"
 
 
 @dataclass(frozen=True)

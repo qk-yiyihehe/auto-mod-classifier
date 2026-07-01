@@ -370,6 +370,7 @@ class OfflineDatabaseSource:
     def __init__(self, classifier):
         self.classifier = classifier
         self.modrinth_source = ModrinthRemoteSource(classifier)
+        self.curseforge_source = CurseforgeRemoteSource(classifier)
 
     def is_enabled(self, options: ClassificationOptions) -> bool:
         return options.use_offline_database and self.classifier.offline_database.is_available()
@@ -391,6 +392,18 @@ class OfflineDatabaseSource:
     def _lookup_precise_remote(self, meta: ModMeta, match: OfflineDatabaseMatch) -> Optional[Classification]:
         if match.modrinth_project:
             classification = self.modrinth_source.lookup_by_project_id(meta, match.modrinth_project)
+            if classification is not None:
+                return classification
+        if match.mapped_modrinth_project:
+            classification = self.modrinth_source.lookup_by_project_id(meta, match.mapped_modrinth_project)
+            if classification is not None:
+                return classification
+        if match.curseforge_project:
+            classification = self.curseforge_source.lookup_by_file_identity(
+                meta,
+                project_id=match.curseforge_project,
+                file_id=match.curseforge_file,
+            )
             if classification is not None:
                 return classification
         return None
@@ -521,6 +534,61 @@ class CurseforgeRemoteSource:
                     return Classification("server-keep", "curseforge", f"CurseForge: {server_side}", link)
                 return Classification("client-only", "curseforge", f"CurseForge: {server_side}", link)
             break
+        return None
+
+    def lookup_by_file_identity(self, meta: ModMeta, project_id: str, file_id: str) -> Optional[Classification]:
+        project_id = str(project_id or "").strip()
+        file_id = str(file_id or "").strip()
+        if not project_id:
+            return None
+
+        file_payload = None
+        if file_id:
+            cache_key = f"cf-file-id::{project_id}::{file_id}"
+            file_url = f"https://api.curseforge.com/v1/mods/{urllib.parse.quote(project_id)}/files/{urllib.parse.quote(file_id)}"
+            file_payload = self.classifier.curseforge_json_request(cache_key, file_url)
+
+        project_payload = self.classifier.curseforge_json_request(
+            f"cf-project-id::{project_id}",
+            f"https://api.curseforge.com/v1/mods/{urllib.parse.quote(project_id)}",
+        )
+        project_data = (project_payload or {}).get("data") or {}
+        file_data = (file_payload or {}).get("data") or {}
+        if not project_data and not file_data:
+            return None
+
+        return self._classification_from_api_payload(meta, project_data, file_data)
+
+    def _classification_from_api_payload(self, meta: ModMeta, project_data: dict, file_data: dict) -> Optional[Classification]:
+        game_versions = [str(item).strip() for item in file_data.get("gameVersions") or [] if str(item).strip()]
+        normalized_versions = {item.lower() for item in game_versions}
+        website_url = str((project_data.get("links") or {}).get("websiteUrl") or "").strip()
+        project_name = str(project_data.get("name") or file_data.get("displayName") or meta.mod_name or meta.file_name).strip()
+
+        if "client" in normalized_versions and "server" not in normalized_versions:
+            return Classification(
+                "client-only",
+                "curseforge",
+                f"CurseForge(离线库直连): {project_name} 标记为 Client",
+                website_url,
+            )
+        if "server" in normalized_versions:
+            return Classification(
+                "server-keep",
+                "curseforge",
+                f"CurseForge(离线库直连): {project_name} 标记为 Server",
+                website_url,
+            )
+
+        # CurseForge API 能精确命中项目/文件，但大多数文件并不直接提供端侧结论。
+        # 这种场景保留 unknown，让后面的网页兜底继续尝试。
+        if file_data:
+            return Classification(
+                "unknown",
+                "curseforge",
+                f"CurseForge(离线库直连): {project_name} 已命中精确文件，但接口未提供明确客户端/服务端标记",
+                website_url,
+            )
         return None
 
 
