@@ -7,10 +7,12 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMessageBox,
     QScrollArea,
     QTableWidget,
     QTableWidgetItem,
@@ -38,6 +40,7 @@ from .qt_theme import (
     apply_card_style,
     apply_themed_style,
     apply_label_tone,
+    build_window_stylesheet,
 )
 
 
@@ -52,6 +55,104 @@ def _hex_to_rgb(color: str) -> Tuple[int, int, int]:
 def _rgba(color: str, alpha: float) -> str:
     red, green, blue = _hex_to_rgb(color)
     return f"rgba({red}, {green}, {blue}, {alpha:.2f})"
+
+
+def _transient_dialog_stylesheet() -> str:
+    """给系统文件选择框/消息框使用的临时主题样式。"""
+    return build_window_stylesheet() + f"""
+    QFileDialog, QMessageBox {{
+        background-color: {qt_theme.BG_CONTENT};
+        color: {qt_theme.TEXT_PRIMARY};
+    }}
+    QFileDialog QLabel,
+    QMessageBox QLabel {{
+        color: {qt_theme.TEXT_PRIMARY};
+        background: transparent;
+    }}
+    QFileDialog QListView,
+    QFileDialog QTreeView,
+    QMessageBox QTextEdit,
+    QMessageBox QPlainTextEdit {{
+        background-color: {qt_theme.EDITOR_BG};
+        color: {qt_theme.TEXT_PRIMARY};
+        border: 1px solid {qt_theme.BORDER_DEFAULT};
+        border-radius: {RADIUS_MD}px;
+    }}
+    """
+
+
+def themed_get_existing_directory(parent: Optional[QWidget], title: str, directory: str = "") -> str:
+    """使用非原生目录选择框，确保能跟随应用主题。"""
+    dialog = QFileDialog(parent, title, directory or "")
+    dialog.setFileMode(QFileDialog.Directory)
+    dialog.setOption(QFileDialog.ShowDirsOnly, True, on=True)
+    dialog.setOption(QFileDialog.DontUseNativeDialog, True, on=True)
+    dialog.setStyleSheet(_transient_dialog_stylesheet())
+    if dialog.exec():
+        selected_files = dialog.selectedFiles()
+        if selected_files:
+            return selected_files[0]
+    return ""
+
+
+def themed_get_open_file_name(
+    parent: Optional[QWidget],
+    title: str,
+    directory: str = "",
+    file_filter: str = "",
+) -> Tuple[str, str]:
+    """使用非原生文件选择框，确保能跟随应用主题。"""
+    dialog = QFileDialog(parent, title, directory or "", file_filter)
+    dialog.setFileMode(QFileDialog.ExistingFile)
+    dialog.setOption(QFileDialog.DontUseNativeDialog, True, on=True)
+    dialog.setStyleSheet(_transient_dialog_stylesheet())
+    if dialog.exec():
+        selected_files = dialog.selectedFiles()
+        if selected_files:
+            return selected_files[0], dialog.selectedNameFilter()
+    return "", ""
+
+
+def themed_question(parent: Optional[QWidget], title: str, message: str) -> bool:
+    """主题感知的二次确认弹窗。"""
+    dialog = QMessageBox(parent)
+    dialog.setWindowTitle(title)
+    dialog.setText(message)
+    dialog.setIcon(QMessageBox.Question)
+    dialog.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+    dialog.setDefaultButton(QMessageBox.Yes)
+    dialog.setStyleSheet(_transient_dialog_stylesheet())
+    return dialog.exec() == QMessageBox.Yes
+
+
+def themed_information(parent: Optional[QWidget], title: str, message: str) -> None:
+    dialog = QMessageBox(parent)
+    dialog.setWindowTitle(title)
+    dialog.setText(message)
+    dialog.setIcon(QMessageBox.Information)
+    dialog.setStandardButtons(QMessageBox.Ok)
+    dialog.setStyleSheet(_transient_dialog_stylesheet())
+    dialog.exec()
+
+
+def themed_warning(parent: Optional[QWidget], title: str, message: str) -> None:
+    dialog = QMessageBox(parent)
+    dialog.setWindowTitle(title)
+    dialog.setText(message)
+    dialog.setIcon(QMessageBox.Warning)
+    dialog.setStandardButtons(QMessageBox.Ok)
+    dialog.setStyleSheet(_transient_dialog_stylesheet())
+    dialog.exec()
+
+
+def themed_critical(parent: Optional[QWidget], title: str, message: str) -> None:
+    dialog = QMessageBox(parent)
+    dialog.setWindowTitle(title)
+    dialog.setText(message)
+    dialog.setIcon(QMessageBox.Critical)
+    dialog.setStandardButtons(QMessageBox.Ok)
+    dialog.setStyleSheet(_transient_dialog_stylesheet())
+    dialog.exec()
 
 
 class VersionSelectionDialog(QDialog):

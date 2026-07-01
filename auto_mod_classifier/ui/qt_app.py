@@ -13,9 +13,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+try:
+    import winreg
+except ImportError:  # pragma: no cover - 非 Windows 环境下回退到 Qt 自身结果
+    winreg = None
+
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QColor, QCloseEvent, QDesktopServices, QDragEnterEvent, QDropEvent, QIcon
-from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox, QWidget
+from PySide6.QtWidgets import QApplication, QWidget
 from qfluentwidgets import (
     ComboBox,
     FluentIcon as FIF,
@@ -47,7 +52,16 @@ from ..shared import (
     get_category_label,
 )
 from ..tasks import run_mod_task, run_server_task
-from .qt_dialogs import ChecklistDialog, VersionSelectionDialog
+from .qt_dialogs import (
+    ChecklistDialog,
+    VersionSelectionDialog,
+    themed_critical,
+    themed_get_existing_directory,
+    themed_get_open_file_name,
+    themed_information,
+    themed_question,
+    themed_warning,
+)
 from .qt_pages import QtPageFactory
 from .qt_state import HomeWidgets, ModInputWidgets, ReportSectionState, ServerInputWidgets, SettingsWidgets, TaskPanelState
 from .qt_theme import ACCENT_COLOR, APP_ICON_PATH, build_window_stylesheet, refresh_themed_styles, set_palette
@@ -208,7 +222,25 @@ class App(FluentWindow):
         if app is None:
             return Theme.DARK
         color_scheme = app.styleHints().colorScheme()
-        return Theme.DARK if color_scheme == Qt.ColorScheme.Dark else Theme.LIGHT
+        if color_scheme == Qt.ColorScheme.Dark:
+            return Theme.DARK
+        if color_scheme == Qt.ColorScheme.Light:
+            return Theme.LIGHT
+        # Windows 上有些环境不会把系统主题明确暴露给 Qt，这里退回注册表判定。
+        return self._resolve_windows_system_theme()
+
+    def _resolve_windows_system_theme(self) -> Theme:
+        if sys.platform != "win32" or winreg is None:
+            return Theme.DARK
+        try:
+            with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+            ) as key:
+                apps_use_light_theme, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+        except OSError:
+            return Theme.DARK
+        return Theme.LIGHT if int(apps_use_light_theme) == 1 else Theme.DARK
 
     def _theme_from_index(self, index: int) -> Theme:
         theme_map = {0: Theme.DARK, 1: Theme.LIGHT, 2: Theme.AUTO}
@@ -367,12 +399,12 @@ class App(FluentWindow):
         )
 
     def choose_mod_folder(self) -> None:
-        selected = QFileDialog.getExistingDirectory(self, "选择 mods 目录")
+        selected = themed_get_existing_directory(self, "选择 mods 目录")
         if selected:
             self._require_mod_inputs().path_edit.setText(selected)
 
     def choose_mod_archive(self) -> None:
-        selected, _ = QFileDialog.getOpenFileName(
+        selected, _ = themed_get_open_file_name(
             self,
             "选择整合包文件",
             "",
@@ -390,17 +422,17 @@ class App(FluentWindow):
                 source_path = Path(source_text)
                 if source_path.exists():
                     default_dir = str(source_path.parent if source_path.is_file() else source_path)
-        selected = QFileDialog.getExistingDirectory(self, "选择模组筛选结果输出目录", default_dir)
+        selected = themed_get_existing_directory(self, "选择模组筛选结果输出目录", default_dir)
         if selected:
             mod_inputs.output_path_edit.setText(selected)
 
     def choose_client_folder(self) -> None:
-        selected = QFileDialog.getExistingDirectory(self, "选择客户端实例目录")
+        selected = themed_get_existing_directory(self, "选择客户端实例目录")
         if selected:
             self._require_server_inputs().client_path_edit.setText(selected)
 
     def choose_server_archive(self) -> None:
-        selected, _ = QFileDialog.getOpenFileName(
+        selected, _ = themed_get_open_file_name(
             self,
             "选择整合包文件",
             "",
@@ -411,7 +443,7 @@ class App(FluentWindow):
 
     def choose_output_folder(self) -> None:
         default_dir = self._require_settings_widgets().server_output_path_edit.text().strip()
-        selected = QFileDialog.getExistingDirectory(self, "选择新的空服务端输出目录", default_dir)
+        selected = themed_get_existing_directory(self, "选择新的空服务端输出目录", default_dir)
         if selected:
             self._require_server_inputs().output_path_edit.setText(selected)
 
@@ -739,14 +771,7 @@ class App(FluentWindow):
                     dialog.exec()
                     payload["response"] = dialog.selected_keys
                 elif payload["kind"] == "continue-wait":
-                    result = QMessageBox.question(
-                        self,
-                        str(payload["title"]),
-                        str(payload["message"]),
-                        QMessageBox.Yes | QMessageBox.No,
-                        QMessageBox.Yes,
-                    )
-                    payload["response"] = result == QMessageBox.Yes
+                    payload["response"] = themed_question(self, str(payload["title"]), str(payload["message"]))
                 payload["event"].set()
 
         self._flush_pending_logs()
@@ -1098,13 +1123,13 @@ class App(FluentWindow):
         return lines[-1] if lines else "运行失败，详细信息已经写入日志。"
 
     def show_info(self, message: str) -> None:
-        QMessageBox.information(self, APP_TITLE, message)
+        themed_information(self, APP_TITLE, message)
 
     def show_warning(self, message: str) -> None:
-        QMessageBox.warning(self, APP_TITLE, message)
+        themed_warning(self, APP_TITLE, message)
 
     def show_error(self, message: str) -> None:
-        QMessageBox.critical(self, APP_TITLE, message)
+        themed_critical(self, APP_TITLE, message)
 
     def show_success(self, message: str) -> None:
         InfoBar.success(
