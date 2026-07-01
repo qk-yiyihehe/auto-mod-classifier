@@ -82,17 +82,8 @@ def _transient_dialog_stylesheet() -> str:
 
 
 def themed_get_existing_directory(parent: Optional[QWidget], title: str, directory: str = "") -> str:
-    """使用非原生目录选择框，确保能跟随应用主题。"""
-    dialog = QFileDialog(parent, title, directory or "")
-    dialog.setFileMode(QFileDialog.Directory)
-    dialog.setOption(QFileDialog.ShowDirsOnly, True)
-    dialog.setOption(QFileDialog.DontUseNativeDialog, True)
-    dialog.setStyleSheet(_transient_dialog_stylesheet())
-    if dialog.exec():
-        selected_files = dialog.selectedFiles()
-        if selected_files:
-            return selected_files[0]
-    return ""
+    """目录选择保持原生系统样式，不跟随应用主题。"""
+    return QFileDialog.getExistingDirectory(parent, title, directory or "")
 
 
 def themed_get_open_file_name(
@@ -101,16 +92,8 @@ def themed_get_open_file_name(
     directory: str = "",
     file_filter: str = "",
 ) -> Tuple[str, str]:
-    """使用非原生文件选择框，确保能跟随应用主题。"""
-    dialog = QFileDialog(parent, title, directory or "", file_filter)
-    dialog.setFileMode(QFileDialog.ExistingFile)
-    dialog.setOption(QFileDialog.DontUseNativeDialog, True)
-    dialog.setStyleSheet(_transient_dialog_stylesheet())
-    if dialog.exec():
-        selected_files = dialog.selectedFiles()
-        if selected_files:
-            return selected_files[0], dialog.selectedNameFilter()
-    return "", ""
+    """文件选择保持原生系统样式，不跟随应用主题。"""
+    return QFileDialog.getOpenFileName(parent, title, directory or "", file_filter)
 
 
 def themed_question(parent: Optional[QWidget], title: str, message: str) -> bool:
