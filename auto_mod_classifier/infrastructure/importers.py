@@ -192,6 +192,16 @@ def _build_single_version_directory_hint(source_path: Path) -> Optional[str]:
     )
 
 
+def _looks_like_standalone_version_instance(path: Path) -> bool:
+    """兼容 PCL 这类把完整实例直接放在 versions/版本名 下的目录结构。"""
+    if path.parent.name.lower() != "versions":
+        return False
+    has_mods = (path / "mods").is_dir()
+    has_config = (path / "config").is_dir()
+    has_root_version_manifest = any((path / f"{item.stem}.jar").exists() for item in path.glob("*.json"))
+    return has_mods and (has_config or has_root_version_manifest)
+
+
 def _looks_like_client_root(path: Path) -> bool:
     if (path / ".minecraft").is_dir():
         return True
@@ -351,7 +361,7 @@ class DirectorySourceImporter:
         if not source_path.exists() or not source_path.is_dir():
             raise RuntimeError("客户端实例目录不存在。")
         version_dir_hint = _build_single_version_directory_hint(source_path)
-        if version_dir_hint:
+        if version_dir_hint and not _looks_like_standalone_version_instance(source_path):
             raise RuntimeError(version_dir_hint)
         return PreparedServerSource(
             source_kind="directory",
