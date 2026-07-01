@@ -120,6 +120,7 @@ class App(FluentWindow):
         self.ui_queue: "queue.Queue[dict[str, Any]]" = queue.Queue()
         self._pending_logs: Dict[str, List[str]] = {"mod": [], "server": []}
         self._stage_event_mode: Dict[str, bool] = {"mod": False, "server": False}
+        self._task_dialog_shown: Dict[str, bool] = {"mod": False, "server": False}
         self._runtime_ref: Any = None
         self._settings_data = self._load_settings_data()
         self._theme_mode: Theme = self._theme_from_index(int(self._settings_data.get("theme_index", 0)))
@@ -573,6 +574,7 @@ class App(FluentWindow):
         panel = self.get_panel(panel_key)
         self._pending_logs[panel_key] = []
         self._stage_event_mode[panel_key] = False
+        self._task_dialog_shown[panel_key] = False
         panel.log_edit.clear()
         panel.summary_edit.setPlainText("正在处理，请稍候。完成后这里会显示本次摘要。")
         panel.progress_bar.setValue(0)
@@ -719,7 +721,8 @@ class App(FluentWindow):
                 self._refresh_home_overview(panel_key=panel_key, status="已完成", output=payload.get("output"))
                 self._set_busy_state(False)
                 self.show_success(payload["status"])
-                if panel_key in {"mod", "server"}:
+                if panel_key in {"mod", "server"} and not self._task_dialog_shown.get(panel_key, False):
+                    self._task_dialog_shown[panel_key] = True
                     dialog_title = "模组筛选完成" if panel_key == "mod" else "服务端制作完成"
                     themed_information(
                         self,
@@ -742,7 +745,9 @@ class App(FluentWindow):
                 self._update_report_section(panel_key, "运行失败", str(payload), panel.result_dir, panel.extra_dir)
                 self._refresh_home_overview(panel_key=panel_key, status="失败", output=None)
                 self._set_busy_state(False)
-                self.show_error(self._summarize_error_text(str(payload)))
+                if not self._task_dialog_shown.get(panel_key, False):
+                    self._task_dialog_shown[panel_key] = True
+                    self.show_error(self._summarize_error_text(str(payload)))
             elif kind == "ui-request":
                 if payload["kind"] == "version":
                     dialog = VersionSelectionDialog(payload["candidates"], self)
