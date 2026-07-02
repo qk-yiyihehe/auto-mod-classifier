@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import tempfile
+import urllib.parse
 import zipfile
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
@@ -16,6 +17,8 @@ from ..shared import IMPORT_CACHE_DIR_NAME, LoaderType, VersionCandidate
 _ACTIVE_IMPORT_WORKSPACES: set[Path] = set()
 _IMPORT_ATEXIT_REGISTERED = False
 LOCAL_IMPORT_CACHE_DIR_NAME = "_导入缓存"
+MODPACK_DOWNLOAD_RETRY_ROUNDS = 5
+CURSEFORGE_METADATA_RETRY_ROUNDS = 5
 
 
 def get_import_cache_root() -> Path:
@@ -166,6 +169,90 @@ def _verify_download_hash(file_path: Path, hashes: Dict[str, str]) -> None:
         expected = str(hashes[name]).strip().lower()
         if actual != expected:
             raise RuntimeError(f"{file_path.name} 的 {name} 校验失败。")
+
+
+def _dedupe_text_list(items: Iterable[str]) -> List[str]:
+    seen: set[str] = set()
+    ordered: List[str] = []
+    for item in items:
+        text = str(item or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        ordered.append(text)
+    return ordered
+
+
+def _build_curseforge_cdn_candidates(file_id: int, file_name: str) -> List[str]:
+    """当 API 不返回 downloadUrl 时，按 CurseForge CDN 规律直接拼出兜底地址。"""
+    safe_name = str(file_name or "").strip()
+    if not file_id or not safe_name:
+        return []
+
+    file_group = file_id // 1000
+    file_leaf = file_id % 1000
+    relative_path = f"{file_group}/{file_leaf:03d}"
+    encoded_name = urllib.parse.quote(safe_name, safe="")
+
+    candidates = [
+        f"https://mediafilez.forgecdn.net/files/{relative_path}/{encoded_name}",
+        f"https://edge.forgecdn.net/files/{relative_path}/{encoded_name}",
+    ]
+    if encoded_name != safe_name:
+        candidates.extend(
+            [
+                f"https://mediafilez.forgecdn.net/files/{relative_path}/{safe_name}",
+                f"https://edge.forgecdn.net/files/{relative_path}/{safe_name}",
+            ]
+        )
+    return _dedupe_text_list(candidates)
+
+
+def _resolve_curseforge_download_urls(project_id: int, file_id: int, download_source: str) -> tuple[str, List[str]]:
+    """尽量把 CurseForge 文件名和下载地址补齐，避免只因 downloadUrl 为空就整体失败。"""
+    default_name = f"{project_id}-{file_id}.jar"
+    file_name = default_name
+    urls: List[str] = []
+    errors: List[str] = []
+
+    meta_url = f"https://api.curseforge.com/v1/mods/{project_id}/files/{file_id}"
+    try:
+        file_meta = http_get_json(
+            meta_url,
+            download_source,
+            retry_rounds=CURSEFORGE_METADATA_RETRY_ROUNDS,
+        ).get("data") or {}
+        file_name = str(file_meta.get("fileName") or default_name).strip() or default_name
+        urls.append(str(file_meta.get("downloadUrl") or "").strip())
+    except Exception as exc:
+        errors.append(f"文件信息接口失败：{exc}")
+
+    mirror_url = f"https://api.curseforge.com/v1/mods/{project_id}/files/{file_id}/download-url"
+    try:
+        urls.append(
+            str(
+                (
+                    http_get_json(
+                        mirror_url,
+                        download_source,
+                        retry_rounds=CURSEFORGE_METADATA_RETRY_ROUNDS,
+                    ).get("data")
+                    or ""
+                )
+            ).strip()
+        )
+    except Exception as exc:
+        errors.append(f"下载地址接口失败：{exc}")
+
+    urls.extend(_build_curseforge_cdn_candidates(file_id, file_name))
+    resolved_urls = _dedupe_text_list(urls)
+    if resolved_urls:
+        return file_name, resolved_urls
+
+    detail = "；".join(errors[:2])
+    if detail:
+        raise RuntimeError(f"无法获取 CurseForge 文件下载地址：{project_id}/{file_id}（{detail}）")
+    raise RuntimeError(f"无法获取 CurseForge 文件下载地址：{project_id}/{file_id}")
 
 
 def _copy_tree_if_exists(source_root: Path, source_name: str, target_root: Path) -> None:
@@ -413,6 +500,7 @@ class MrpackSourceImporter:
                     display_name=relative_path,
                     log_callback=lambda message: _emit(emit, "log", message),
                     log_success=False,
+                    retry_rounds=MODPACK_DOWNLOAD_RETRY_ROUNDS,
                 )
                 _verify_download_hash(temp_download, item.get("hashes") or {})
                 shutil.move(str(temp_download), str(target_path))
@@ -588,26 +676,19 @@ class ZipModpackSourceImporter:
                 if not project_id or not file_id:
                     raise RuntimeError("CurseForge 整合包清单中存在缺少 projectID/fileID 的文件项。")
 
-                meta_url = f"https://api.curseforge.com/v1/mods/{project_id}/files/{file_id}"
-                file_meta = http_get_json(meta_url, request_download_source).get("data") or {}
-                download_url = str(file_meta.get("downloadUrl") or "").strip()
-                file_name = str(file_meta.get("fileName") or f"{project_id}-{file_id}.jar").strip()
-                if not download_url:
-                    mirror_url = f"https://api.curseforge.com/v1/mods/{project_id}/files/{file_id}/download-url"
-                    download_url = str((http_get_json(mirror_url, request_download_source).get("data") or "")).strip()
-                if not download_url:
-                    raise RuntimeError(f"无法获取 CurseForge 文件下载地址：{project_id}/{file_id}")
+                file_name, download_urls = _resolve_curseforge_download_urls(project_id, file_id, request_download_source)
 
                 destination = mods_dir / file_name
                 try:
                     http_download(
-                        download_url,
+                        download_urls,
                         destination,
                         request_download_source,
                         reporter=reporter,
                         display_name=file_name,
                         log_callback=lambda message: _emit(emit, "log", message),
                         log_success=False,
+                        retry_rounds=MODPACK_DOWNLOAD_RETRY_ROUNDS,
                     )
                     _emit(emit, "log", f"[下载成功] {file_name}")
                 except Exception as exc:
