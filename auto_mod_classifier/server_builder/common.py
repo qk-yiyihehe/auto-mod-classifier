@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Any, Callable, Optional, Tuple
 
-from ..download_support import DownloadStatsReporter, http_download, http_get_json, http_get_text
+from ..download_support import DownloadStatsReporter, http_download, http_get_json, http_get_text, http_probe
 from ..shared import *
 from .context import ServerBuilderRuntime
 
@@ -56,6 +56,14 @@ class ServerBuilderCommonService:
         data = http_get_json(url, self.runtime.download_source, timeout=30)
         self.runtime.network_cache[cache_key] = data
         return data
+
+    def http_probe(self, url: str) -> bool:
+        cache_key = f"probe::{url}"
+        if cache_key in self.runtime.network_cache:
+            return bool(self.runtime.network_cache[cache_key])
+        available = http_probe(url, self.runtime.download_source, timeout=20)
+        self.runtime.network_cache[cache_key] = available
+        return available
 
     def http_download(
         self,

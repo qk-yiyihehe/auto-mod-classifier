@@ -735,32 +735,58 @@ class ServerVersionService:
             file_name=f"fabric-installer-{installer_version}.jar",
         )
 
+    def _can_use_installer_with_probe(self, loader_name: str, installer_version: str, download_url: str) -> bool:
+        if self.common.http_probe(download_url):
+            self.common.log_line(
+                f"{loader_name} 安装器元数据暂未命中 {installer_version}，"
+                "但安装器地址可访问，已改为直接继续下载。"
+            )
+            return True
+        return False
+
     def resolve_forge_installer(self, candidate: VersionCandidate) -> InstallerSpec:
-        metadata = ET.fromstring(self.common.http_get_text("https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml"))
         wanted = f"{candidate.minecraft_version}-{candidate.loader_version}"
-        versions = [item.text for item in metadata.findall("./versioning/versions/version") if item.text]
-        if wanted not in versions:
-            raise RuntimeError(f"Forge 官方源未找到完全同版本服务端安装器：{wanted}")
+        download_url = f"https://maven.minecraftforge.net/net/minecraftforge/forge/{wanted}/forge-{wanted}-installer.jar"
+        metadata_hit = False
+        try:
+            metadata = ET.fromstring(self.common.http_get_text("https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml"))
+            versions = [item.text for item in metadata.findall("./versioning/versions/version") if item.text]
+            metadata_hit = wanted in versions
+        except Exception as exc:
+            self.common.log_line(f"Forge 安装器元数据读取失败，改为直接探测安装器地址：{exc}")
+        if not metadata_hit and not self._can_use_installer_with_probe("Forge", wanted, download_url):
+            raise RuntimeError(f"Forge 安装器解析失败：未在当前元数据中找到 {wanted}，且安装器地址也无法访问。")
         return InstallerSpec(
             loader=LoaderType.FORGE.value,
             minecraft_version=candidate.minecraft_version,
             loader_version=candidate.loader_version,
             installer_version=wanted,
-            download_url=f"https://maven.minecraftforge.net/net/minecraftforge/forge/{wanted}/forge-{wanted}-installer.jar",
+            download_url=download_url,
             file_name=f"forge-{wanted}-installer.jar",
         )
 
     def resolve_neoforge_installer(self, candidate: VersionCandidate) -> InstallerSpec:
-        metadata = ET.fromstring(self.common.http_get_text("https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml"))
-        versions = [item.text for item in metadata.findall("./versioning/versions/version") if item.text]
-        if candidate.loader_version not in versions:
-            raise RuntimeError(f"NeoForge 官方源未找到完全同版本服务端安装器：{candidate.loader_version}")
+        download_url = (
+            "https://maven.neoforged.net/releases/net/neoforged/neoforge/"
+            f"{candidate.loader_version}/neoforge-{candidate.loader_version}-installer.jar"
+        )
+        metadata_hit = False
+        try:
+            metadata = ET.fromstring(self.common.http_get_text("https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml"))
+            versions = [item.text for item in metadata.findall("./versioning/versions/version") if item.text]
+            metadata_hit = candidate.loader_version in versions
+        except Exception as exc:
+            self.common.log_line(f"NeoForge 安装器元数据读取失败，改为直接探测安装器地址：{exc}")
+        if not metadata_hit and not self._can_use_installer_with_probe("NeoForge", candidate.loader_version, download_url):
+            raise RuntimeError(
+                f"NeoForge 安装器解析失败：未在当前元数据中找到 {candidate.loader_version}，且安装器地址也无法访问。"
+            )
         return InstallerSpec(
             loader=LoaderType.NEOFORGE.value,
             minecraft_version=candidate.minecraft_version,
             loader_version=candidate.loader_version,
             installer_version=candidate.loader_version,
-            download_url=f"https://maven.neoforged.net/releases/net/neoforged/neoforge/{candidate.loader_version}/neoforge-{candidate.loader_version}-installer.jar",
+            download_url=download_url,
             file_name=f"neoforge-{candidate.loader_version}-installer.jar",
         )
 

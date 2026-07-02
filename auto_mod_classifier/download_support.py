@@ -507,6 +507,43 @@ def http_get_json(
     return _fetch_with_attempts(url, download_source, timeout, lambda raw: json.loads(raw.decode("utf-8")), retry_rounds)
 
 
+def http_probe(
+    url: str,
+    download_source: str,
+    timeout: int = DEFAULT_METADATA_TIMEOUT_SECONDS,
+    retry_rounds: int = DEFAULT_REQUEST_RETRY_ROUNDS,
+) -> bool:
+    """轻量探测资源是否可达，只建立连接读响应头，不额外下载整文件。"""
+    total_rounds = max(1, int(retry_rounds))
+    last_error: Optional[Exception] = None
+
+    for round_index in range(total_rounds):
+        attempts = build_download_attempts(url, download_source)
+        if not attempts:
+            raise RuntimeError("未提供可用下载地址。")
+
+        for attempt in attempts:
+            try:
+                req = urllib.request.Request(attempt.url, headers={"User-Agent": USER_AGENT})
+                started_at = time.monotonic()
+                with _open_request(req, attempt.route_code, timeout=timeout) as resp:
+                    status_code = getattr(resp, "status", None) or resp.getcode()
+                    if int(status_code) >= 400:
+                        raise RuntimeError(f"HTTP {status_code}")
+                _record_attempt_score(attempt, time.monotonic() - started_at)
+                return True
+            except Exception as exc:
+                last_error = exc
+                _record_attempt_failure(attempt)
+
+        if round_index + 1 < total_rounds:
+            time.sleep(_build_retry_delay_seconds(round_index))
+
+    if last_error is not None:
+        return False
+    return False
+
+
 def http_download(
     urls: Union[str, Sequence[str]],
     destination: Path,
