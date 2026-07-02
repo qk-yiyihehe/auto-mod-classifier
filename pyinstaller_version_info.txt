@@ -1,7 +1,7 @@
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(3, 0, 0, 0),
-    prodvers=(3, 0, 0, 0),
+    filevers=(3, 0, 1, 0),
+    prodvers=(3, 0, 1, 0),
     mask=0x3F,
     flags=0x0,
     OS=0x40004,
@@ -17,11 +17,11 @@ VSVersionInfo(
           [
             StringStruct("CompanyName", "yiyihehe"),
             StringStruct("FileDescription", "自动筛选模组分类器"),
-            StringStruct("FileVersion", "3.00"),
+            StringStruct("FileVersion", "3.01"),
             StringStruct("InternalName", "自动筛选模组分类器"),
             StringStruct("OriginalFilename", "自动筛选模组分类器.exe"),
             StringStruct("ProductName", "自动筛选模组分类器"),
-            StringStruct("ProductVersion", "3.00"),
+            StringStruct("ProductVersion", "3.01"),
           ]
         )
       ]
