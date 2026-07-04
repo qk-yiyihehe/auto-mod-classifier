@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import ctypes
 import json
 import os
 import queue
@@ -86,6 +87,32 @@ DEFAULT_UI_SETTINGS: Dict[str, Any] = {
     "server_boot_timeout_mode": SERVER_BOOT_TIMEOUT_SMART,
     "theme_index": 2,
 }
+
+WINDOWS_APP_ID = "yiyihehe.AutoModClassifier.3.01"
+
+
+def _resolve_runtime_app_icon() -> QIcon:
+    """优先使用项目 ico，打包后回退到 exe 自身图标。"""
+    if APP_ICON_PATH.exists():
+        icon = QIcon(str(APP_ICON_PATH))
+        if not icon.isNull():
+            return icon
+
+    executable_path = Path(sys.executable).resolve()
+    icon = QIcon(str(executable_path))
+    if not icon.isNull():
+        return icon
+    return QIcon()
+
+
+def _apply_windows_app_id() -> None:
+    """让 Windows 任务栏按当前程序身份展示图标，而不是落回默认 Python 图标。"""
+    if sys.platform != "win32":
+        return
+    try:
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(WINDOWS_APP_ID)
+    except Exception:
+        pass
 
 
 def _resolve_windows_system_theme() -> Theme:
@@ -173,8 +200,9 @@ class App(FluentWindow):
         # 主动设置窗口底色：FluentWindow 的 paintEvent 会自己画一个浅/深纯色背景，
         # 必须用 setCustomBackgroundColor 让它跟我们的调色板走
         self.setCustomBackgroundColor(QColor("#F4F6FA"), QColor("#0D1119"))
-        if APP_ICON_PATH.exists():
-            self.setWindowIcon(QIcon(str(APP_ICON_PATH)))
+        app_icon = _resolve_runtime_app_icon()
+        if not app_icon.isNull():
+            self.setWindowIcon(app_icon)
         self.setStyleSheet(build_window_stylesheet())
 
     def _resize_to_available_screen(self) -> None:
@@ -1293,6 +1321,7 @@ class App(FluentWindow):
 
 
 def main() -> None:
+    _apply_windows_app_id()
     app = QApplication.instance()
     created_app = False
     if app is None:
@@ -1300,6 +1329,9 @@ def main() -> None:
         created_app = True
 
     app.setApplicationName(APP_TITLE)
+    app_icon = _resolve_runtime_app_icon()
+    if not app_icon.isNull():
+        app.setWindowIcon(app_icon)
     startup_settings = dict(DEFAULT_UI_SETTINGS)
     if SETTINGS_FILE_PATH.exists():
         try:
