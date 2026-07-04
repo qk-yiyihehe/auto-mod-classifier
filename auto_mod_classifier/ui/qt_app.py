@@ -67,7 +67,7 @@ from .qt_dialogs import (
 )
 from .qt_pages import QtPageFactory
 from .qt_state import HomeWidgets, ModInputWidgets, ReportSectionState, ServerInputWidgets, SettingsWidgets, TaskPanelState
-from .qt_theme import ACCENT_COLOR, APP_ICON_PATH, build_window_stylesheet, refresh_themed_styles, set_palette
+from .qt_theme import ACCENT_COLOR, build_window_stylesheet, get_app_icon_path, refresh_themed_styles, set_palette
 from .qt_widgets import populate_result_row
 
 SETTINGS_FILE_PATH = Path(__file__).resolve().parents[2] / "auto_mod_classifier_settings.json"
@@ -173,8 +173,11 @@ class App(FluentWindow):
         # 主动设置窗口底色：FluentWindow 的 paintEvent 会自己画一个浅/深纯色背景，
         # 必须用 setCustomBackgroundColor 让它跟我们的调色板走
         self.setCustomBackgroundColor(QColor("#F4F6FA"), QColor("#0D1119"))
-        if APP_ICON_PATH.exists():
-            self.setWindowIcon(QIcon(str(APP_ICON_PATH)))
+        icon_path = get_app_icon_path()
+        if icon_path.exists():
+            window_icon = QIcon(str(icon_path))
+            if not window_icon.isNull():
+                self.setWindowIcon(window_icon)
         self.setStyleSheet(build_window_stylesheet())
 
     def _resize_to_available_screen(self) -> None:
@@ -1300,6 +1303,11 @@ def main() -> None:
         created_app = True
 
     app.setApplicationName(APP_TITLE)
+    icon_path = get_app_icon_path()
+    if icon_path.exists():
+        app_icon = QIcon(str(icon_path))
+        if not app_icon.isNull():
+            app.setWindowIcon(app_icon)
     startup_settings = dict(DEFAULT_UI_SETTINGS)
     if SETTINGS_FILE_PATH.exists():
         try:

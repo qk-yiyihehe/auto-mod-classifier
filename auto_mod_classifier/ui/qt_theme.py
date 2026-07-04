@@ -9,7 +9,28 @@ from PySide6.QtWidgets import QGraphicsDropShadowEffect, QWidget
 from qfluentwidgets import BodyLabel, PlainTextEdit, StrongBodyLabel
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-APP_ICON_PATH = PROJECT_ROOT / "自动筛选模组分类器.ico"
+
+
+def resolve_runtime_asset_path(file_name: str) -> Path:
+    """兼容源码运行、onefile 解包目录和程序旁外置资源。"""
+    candidates: list[Path] = []
+    bundle_dir = getattr(sys, "_MEIPASS", None)
+    if bundle_dir:
+        candidates.append(Path(bundle_dir) / file_name)
+    if getattr(sys, "frozen", False):
+        candidates.append(Path(sys.executable).resolve().parent / file_name)
+    candidates.append(PROJECT_ROOT / file_name)
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0] if candidates else PROJECT_ROOT / file_name
+
+
+def get_app_icon_path() -> Path:
+    return resolve_runtime_asset_path("自动筛选模组分类器.ico")
+
+
+APP_ICON_PATH = get_app_icon_path()
 
 # ═══════════════════════════════════════════
 # 调色板：背景 / 卡片 / 边框 / 文字随主题变
