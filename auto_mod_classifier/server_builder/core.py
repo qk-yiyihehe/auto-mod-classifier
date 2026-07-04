@@ -58,7 +58,7 @@ class ServerBuilderCore:
         self.versioning = ServerVersionService(self.runtime, self.common)
         self.java = ServerJavaService(self.common)
         self.install = ServerInstallService(self.runtime, self.common)
-        self.mods = ServerModService()
+        self.mods = ServerModService(self.common)
         self.launch = ServerLaunchService(self.runtime, self.common)
         self.reporting = ServerReportingService(self.runtime)
         self.workflow = ServerWorkflowService(

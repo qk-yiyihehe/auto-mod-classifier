@@ -1,5 +1,6 @@
 import hashlib
 import re
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
@@ -34,6 +35,25 @@ _PLATFORM_NAMES = {
     "fabricloader": "Fabric Loader",
     "fabric-loader": "Fabric Loader",
 }
+
+_FABRIC_LOADER_FILE_PATTERN = re.compile(r"^fabric-loader-(?P<version>[\w.+-]+)\.jar$", re.IGNORECASE)
+_FABRIC_API_FILE_PATTERN = re.compile(r"^fabric-api-(?P<version>[\w.+-]+)\.jar$", re.IGNORECASE)
+
+
+@dataclass
+class FabricModsResolution:
+    effective_loader_version: str
+    loader_files: List[str] = field(default_factory=list)
+    preferred_fabric_api_file: str = ""
+    duplicate_fabric_api_files: List[str] = field(default_factory=list)
+    notes: List[str] = field(default_factory=list)
+
+    @property
+    def active(self) -> bool:
+        return bool(self.loader_files or self.duplicate_fabric_api_files)
+
+    def forced_skip_files(self) -> set[str]:
+        return set(self.loader_files) | set(self.duplicate_fabric_api_files)
 
 
 def _normalize_failure_text(text: str) -> str:
@@ -1167,8 +1187,96 @@ class ServerJavaService:
 class ServerModService:
     """负责整理模组复核项，以及复制模组和配置目录。"""
 
-    def build_mod_review_items(self, mod_results: List[Dict[str, Any]]) -> List[ReviewItem]:
+    def __init__(self, common: ServerBuilderCommonService):
+        self.common = common
+
+    def resolve_fabric_mods(self, mods_dir: Path, candidate: VersionCandidate) -> FabricModsResolution:
+        resolution = FabricModsResolution(effective_loader_version=candidate.loader_version)
+        if candidate.loader != LoaderType.FABRIC.value or not mods_dir.is_dir():
+            return resolution
+
+        fabric_loader_hits: List[Tuple[str, str]] = []
+        fabric_api_hits: List[Tuple[str, str]] = []
+        for jar_path in sorted(mods_dir.glob("*.jar"), key=lambda item: item.name.lower()):
+            loader_match = _FABRIC_LOADER_FILE_PATTERN.fullmatch(jar_path.name)
+            if loader_match:
+                fabric_loader_hits.append((jar_path.name, str(loader_match.group("version") or "").strip()))
+                continue
+
+            api_match = _FABRIC_API_FILE_PATTERN.fullmatch(jar_path.name)
+            if api_match:
+                fabric_api_hits.append((jar_path.name, str(api_match.group("version") or "").strip()))
+
+        if not fabric_loader_hits and len(fabric_api_hits) <= 1:
+            return resolution
+
+        if fabric_loader_hits:
+            resolution.loader_files = [file_name for file_name, _version in fabric_loader_hits]
+            preferred_loader_version = max(
+                [candidate.loader_version, *[version for _file_name, version in fabric_loader_hits if version]],
+                key=self.common.natural_sort_key,
+            )
+            resolution.effective_loader_version = preferred_loader_version
+            resolution.notes.append("检测到 mods 目录里混入了 Fabric Loader：")
+            for file_name, version in fabric_loader_hits:
+                resolution.notes.append(f" - {file_name} | Fabric Loader {version or '版本号未识别'}")
+            if preferred_loader_version != candidate.loader_version:
+                resolution.notes.append(
+                    f"已将 Fabric Loader 从 versions 目录识别到的 {candidate.loader_version} "
+                    f"上调为更高的 {preferred_loader_version}，服务端会按这个版本重新下载安装。"
+                )
+            else:
+                resolution.notes.append(
+                    f"versions 目录识别到的 Fabric Loader 为 {candidate.loader_version}，"
+                    "目前已经不低于 mods 目录里的版本，本次继续使用它。"
+                )
+
+        if len(fabric_api_hits) > 1:
+            preferred_file_name, preferred_version = max(
+                fabric_api_hits,
+                key=lambda item: self.common.natural_sort_key(item[1] or item[0]),
+            )
+            resolution.preferred_fabric_api_file = preferred_file_name
+            resolution.duplicate_fabric_api_files = [
+                file_name
+                for file_name, _version in fabric_api_hits
+                if file_name != preferred_file_name
+            ]
+            resolution.notes.append("检测到多个 Fabric API，本次仅保留更优版本：")
+            resolution.notes.append(f" - 保留：{preferred_file_name} | Fabric API {preferred_version or '版本号未识别'}")
+            for file_name, version in fabric_api_hits:
+                if file_name == preferred_file_name:
+                    continue
+                resolution.notes.append(f" - 跳过：{file_name} | Fabric API {version or '版本号未识别'}")
+
+        return resolution
+
+    def apply_fabric_loader_override(
+        self,
+        candidate: VersionCandidate,
+        resolution: FabricModsResolution,
+    ) -> VersionCandidate:
+        if candidate.loader != LoaderType.FABRIC.value:
+            return candidate
+        if resolution.effective_loader_version == candidate.loader_version:
+            return candidate
+        return VersionCandidate(
+            version_id=candidate.version_id,
+            minecraft_version=candidate.minecraft_version,
+            loader=candidate.loader,
+            loader_version=resolution.effective_loader_version,
+            java_major=candidate.java_major,
+            json_path=candidate.json_path,
+        )
+
+    def build_mod_review_items(
+        self,
+        mod_results: List[Dict[str, Any]],
+        fabric_resolution: Optional[FabricModsResolution] = None,
+    ) -> List[ReviewItem]:
         items: List[ReviewItem] = []
+        forced_skip_files = fabric_resolution.forced_skip_files() if fabric_resolution else set()
+        preferred_fabric_api_file = fabric_resolution.preferred_fabric_api_file if fabric_resolution else ""
         grouped_rows: Dict[str, List[Dict[str, Any]]] = {}
         for row in mod_results:
             grouped_rows.setdefault(row["Category"], []).append(row)
@@ -1185,6 +1293,7 @@ class ServerModService:
                 )
             )
             for row in group:
+                file_name = row["FileName"]
                 detail_parts = [f"来源：{row['DecisionSource']}", f"原因：{row['Reason']}"]
                 if row.get("JarStatus") == "damaged":
                     detail_parts.insert(0, f"Jar：损坏（{row.get('JarIssue') or '读取异常'}）")
@@ -1192,23 +1301,38 @@ class ServerModService:
                     detail_parts.insert(0, f"名称：{row['ModName']}")
                 if row.get("EvidenceUrl"):
                     detail_parts.append(f"链接：{row['EvidenceUrl']}")
+                if file_name in forced_skip_files:
+                    if file_name in (fabric_resolution.loader_files if fabric_resolution else []):
+                        detail_parts.insert(0, "提示：服务端会单独安装 Fabric Loader，这个文件不会复制到服务端 mods")
+                    else:
+                        detail_parts.insert(0, "提示：检测到多个 Fabric API，只保留更高版本，这个文件不会复制到服务端")
+                elif preferred_fabric_api_file and file_name == preferred_fabric_api_file:
+                    detail_parts.insert(0, "提示：检测到多个 Fabric API，这一份会作为保留版本")
                 items.append(
                     ReviewItem(
-                        key=row["FileName"],
-                        label=row["FileName"],
+                        key=file_name,
+                        label=file_name,
                         detail=" | ".join(detail_parts),
-                        checked=category != "client-only",
+                        checked=category != "client-only" and file_name not in forced_skip_files,
+                        enabled=file_name not in forced_skip_files,
                     )
                 )
         return items
 
-    def copy_selected_mods(self, mod_results: List[Dict[str, Any]], selected_keys: List[str], mods_target_dir: Path) -> int:
+    def copy_selected_mods(
+        self,
+        mod_results: List[Dict[str, Any]],
+        selected_keys: List[str],
+        mods_target_dir: Path,
+        fabric_resolution: Optional[FabricModsResolution] = None,
+    ) -> int:
         mods_target_dir.mkdir(parents=True, exist_ok=True)
         selected_set = set(selected_keys)
+        forced_skip_files = fabric_resolution.forced_skip_files() if fabric_resolution else set()
         copied = 0
         for row in mod_results:
             source_path = row["Path"]
-            is_selected = row["FileName"] in selected_set
+            is_selected = row["FileName"] in selected_set and row["FileName"] not in forced_skip_files
             row["SelectedForServer"] = is_selected
             if is_selected:
                 shutil.copy2(source_path, mods_target_dir / source_path.name)
@@ -1588,12 +1712,13 @@ class ServerInstallService:
             self.common.log_line(f"[模组 {completed}/{inner_total}] {jar.name} -> {get_category_label(row['Category'])} | {row['Reason']}")
 
         results = classify_jars_parallel(
-            self.runtime.classifier,
-            jar_files,
-            self.runtime.use_mcmod,
-            getattr(self.runtime.classifier, "use_curseforge", False),
-            getattr(self.runtime.classifier, "use_offline_database", False),
-            self.runtime.download_source,
+            classifier=self.runtime.classifier,
+            jar_files=jar_files,
+            use_mcmod=self.runtime.use_mcmod,
+            use_curseforge=getattr(self.runtime.classifier, "use_curseforge", False),
+            use_curseforge_api=getattr(self.runtime.classifier, "use_curseforge_api", True),
+            use_offline_database=getattr(self.runtime.classifier, "use_offline_database", False),
+            download_source=self.runtime.download_source,
             progress_callback=first_pass_progress,
             result_callback=first_pass_result,
         )
@@ -1617,11 +1742,12 @@ class ServerInstallService:
                     self.common.log_line(f"[2次筛选 {completed}/{inner_total}] {jar.name} -> {get_category_label(row['Category'])} | {row['Reason']}")
 
                 recovered = rerun_unknown_classifications(
-                    results,
-                    self.runtime.use_mcmod,
-                    getattr(self.runtime.classifier, "use_curseforge", False),
-                    getattr(self.runtime.classifier, "use_offline_database", False),
-                    self.runtime.download_source,
+                    rows=results,
+                    use_mcmod=self.runtime.use_mcmod,
+                    use_curseforge=getattr(self.runtime.classifier, "use_curseforge", False),
+                    use_curseforge_api=getattr(self.runtime.classifier, "use_curseforge_api", True),
+                    use_offline_database=getattr(self.runtime.classifier, "use_offline_database", False),
+                    download_source=self.runtime.download_source,
                     progress_callback=second_pass_progress,
                     result_callback=second_pass_result,
                 )
@@ -2075,6 +2201,13 @@ class ServerWorkflowService:
             if chosen.loader == LoaderType.QUILT.value:
                 raise RuntimeError("检测到 Quilt 客户端，3.01 的一键制作服务端模式暂不支持 Quilt。")
 
+            fabric_resolution = self.mods.resolve_fabric_mods(game_root / "mods", chosen)
+            for note in fabric_resolution.notes:
+                self.common.log_line(note)
+            chosen = self.mods.apply_fabric_loader_override(chosen, fabric_resolution)
+            if fabric_resolution.active:
+                self.common.log_line(f"最终用于服务端制作的版本：{chosen.display_name}")
+
             required_java_major = self.java.get_required_java_major(chosen)
             self.common.set_stage(TaskStage.PRECHECK, 24, f"正在匹配 Java {required_java_major}")
             java_runtime = self.java.ensure_java(client_dir, game_root, chosen, output_root)
@@ -2090,11 +2223,11 @@ class ServerWorkflowService:
 
             self.common.set_stage(TaskStage.CLASSIFY_MODS, 52, "正在筛选客户端模组")
             mod_results = self.install.classify_mod_directory(game_root / "mods")
-            mod_review_items = self.mods.build_mod_review_items(mod_results)
+            mod_review_items = self.mods.build_mod_review_items(mod_results, fabric_resolution)
             if mod_review_items:
                 selected_mod_keys = self.runtime.request_checklist(
                     "Mod复制核查",
-                    "已按分类展示全部模组。待人工确认项排在最前并默认勾选；纯客户端默认不勾选，但会展示给你复核。",
+                    "已按分类展示全部模组。待人工确认项排在最前并默认勾选；纯客户端默认不勾选。若检测到 Fabric Loader 或多份 Fabric API，会自动锁定为最优方案。",
                     mod_review_items,
                 )
                 if selected_mod_keys is None:
@@ -2104,7 +2237,12 @@ class ServerWorkflowService:
                 self.common.log_line("客户端 mods 目录中没有需要复制的模组。")
 
             self.common.set_stage(TaskStage.COPY_MODS, 63, "正在复制服务端模组")
-            copied_mods = self.mods.copy_selected_mods(mod_results, selected_mod_keys, output_root / "mods")
+            copied_mods = self.mods.copy_selected_mods(
+                mod_results,
+                selected_mod_keys,
+                output_root / "mods",
+                fabric_resolution,
+            )
             self.common.log_line(f"已复制 {copied_mods} 个模组到服务端。")
 
             self.common.set_stage(TaskStage.COPY_CONFIGS, 72, "正在整理配置目录候选")
