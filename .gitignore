@@ -1,10 +1,14 @@
 /*
 !README.md
+!LICENSE
+!CONTRIBUTING.md
 !打包发布.bat
 !启动自动筛选模组分类器.bat
 !自动筛选模组分类器.ico
 !自动筛选模组分类器.pyw
 !pyinstaller_version_info.txt
+!.github/
+!.github/**
 !auto_mod_classifier/
 !auto_mod_classifier/**
 !.gitignore

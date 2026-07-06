@@ -1,0 +1,35 @@
+name: 功能建议
+description: 提出一个改进建议
+title: "[Feature] "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        欢迎提出改进建议。请尽量先描述你的实际使用场景，再描述你希望程序怎么做。
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你遇到的问题
+      description: 当前流程哪里不方便，或者哪里做不到
+      placeholder: 我在处理大型整合包时，需要反复手动确认同一类模组
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 你希望的改进方式
+      placeholder: 希望增加某种批量确认或规则复用方式
+    validations:
+      required: true
+  - type: textarea
+    id: use_case
+    attributes:
+      label: 使用场景
+      description: 这个功能更适合什么人、什么整合包、什么流程
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 你现在的替代方案
+      description: 如果现在只能手动处理，也可以写一下你是怎么绕过去的

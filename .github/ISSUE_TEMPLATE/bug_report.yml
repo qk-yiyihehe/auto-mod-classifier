@@ -1,0 +1,77 @@
+name: Bug 反馈
+description: 报告一个可复现的问题
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。请尽量把复现条件写完整，这样更容易定位问题。
+  - type: input
+    id: version
+    attributes:
+      label: 版本号
+      description: 例如 3.01，或对应的提交号
+      placeholder: 3.01
+    validations:
+      required: true
+  - type: dropdown
+    id: input_type
+    attributes:
+      label: 输入类型
+      options:
+        - 客户端实例目录
+        - mrpack 整合包
+        - zip 整合包
+        - 仅模组目录
+        - 其他
+    validations:
+      required: true
+  - type: dropdown
+    id: loader
+    attributes:
+      label: 加载器类型
+      options:
+        - Fabric
+        - Quilt
+        - Forge
+        - NeoForge
+        - 不确定
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开程序
+        2. 导入某个整合包
+        3. 点击开始制作服务端
+        4. 在某一步报错
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期结果
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际结果
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志或截图
+      description: 可以粘贴关键报错片段，必要时补充截图
+      render: text
+  - type: input
+    id: environment
+    attributes:
+      label: 运行环境
+      description: 例如 Windows 11 / Python 版本 / 浏览器环境
+      placeholder: Windows 11, Python 3.12, Edge
