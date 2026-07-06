@@ -1,0 +1,31 @@
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=(3, 0, 1, 0),
+    prodvers=(3, 0, 1, 0),
+    mask=0x3F,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo(
+      [
+        StringTable(
+          "080404B0",
+          [
+            StringStruct("CompanyName", "yiyihehe"),
+            StringStruct("FileDescription", "自动筛选模组分类器"),
+            StringStruct("FileVersion", "3.01"),
+            StringStruct("InternalName", "自动筛选模组分类器"),
+            StringStruct("OriginalFilename", "自动筛选模组分类器.exe"),
+            StringStruct("ProductName", "自动筛选模组分类器"),
+            StringStruct("ProductVersion", "3.01"),
+          ]
+        )
+      ]
+    ),
+    VarFileInfo([VarStruct("Translation", [2052, 1200])])
+  ]
+)

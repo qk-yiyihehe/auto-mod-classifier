@@ -4,4 +4,9 @@
 !启动自动筛选模组分类器.bat
 !自动筛选模组分类器.ico
 !自动筛选模组分类器.pyw
+!pyinstaller_version_info.txt
+!auto_mod_classifier/
+!auto_mod_classifier/**
 !.gitignore
+__pycache__/
+*.pyc

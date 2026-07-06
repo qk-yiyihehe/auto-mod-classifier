@@ -7,7 +7,7 @@ REM Use this script with "/nopause" for automation.
 set "SCRIPT_DIR=%~dp0"
 set "APP_NAME="
 set "EXE_NAME="
-set "RELEASE_EXE_NAME=auto-mod-classifier-2.01.exe"
+set "RELEASE_EXE_NAME=auto-mod-classifier-3.01.exe"
 set "ICON_FILE="
 set "ENTRY_FILE="
 set "NO_PAUSE="
@@ -46,7 +46,7 @@ if not exist "%SCRIPT_DIR%%ICON_FILE%" (
 
 REM Run PyInstaller inside the project directory.
 pushd "%SCRIPT_DIR%"
-python -m PyInstaller --noconfirm --clean --noconsole --onefile --hidden-import=DrissionPage --exclude-module=cv2 --exclude-module=PIL --exclude-module=numpy --exclude-module=openpyxl --exclude-module=cloudscraper --exclude-module=curl_cffi --name "%APP_NAME%" --icon "%ICON_FILE%" "%ENTRY_FILE%"
+python -m PyInstaller --noconfirm --clean --noconsole --onefile --hidden-import=DrissionPage --exclude-module=cv2 --exclude-module=PIL --exclude-module=numpy --exclude-module=openpyxl --exclude-module=cloudscraper --exclude-module=curl_cffi --name "%APP_NAME%" --icon "%ICON_FILE%" --add-data "%ICON_FILE%;." --version-file "%SCRIPT_DIR%pyinstaller_version_info.txt" "%ENTRY_FILE%"
 set "BUILD_ERROR=%ERRORLEVEL%"
 popd
 
