@@ -1,6 +1,7 @@
 import atexit
 import concurrent.futures
 import hashlib
+from contextlib import contextmanager
 import json
 import os
 import shutil
@@ -29,29 +30,58 @@ def get_import_cache_root() -> Path:
     return Path(tempfile.gettempdir()) / IMPORT_CACHE_DIR_NAME
 
 
-def _is_owned_import_workspace(workspace_root: Path, cache_root: Path) -> bool:
-    """只认可程序在指定缓存根目录中创建并标记过的直接子目录。"""
+def _is_import_workspace_path(workspace_root: Path, cache_root: Path) -> bool:
     if not workspace_root.name.startswith(IMPORT_WORKSPACE_PREFIX):
         return False
     try:
-        if workspace_root.is_symlink() or not workspace_root.is_dir():
-            return False
-        if workspace_root.resolve().parent != cache_root.resolve():
-            return False
+        return (
+            not workspace_root.is_symlink()
+            and workspace_root.is_dir()
+            and workspace_root.resolve().parent == cache_root.resolve()
+        )
+    except (OSError, RuntimeError):
+        return False
+
+
+def _is_owned_import_workspace(workspace_root: Path, cache_root: Path) -> bool:
+    """只认可程序在指定缓存根目录中创建并标记过的直接子目录。"""
+    if not _is_import_workspace_path(workspace_root, cache_root):
+        return False
+    try:
         marker_path = workspace_root / IMPORT_WORKSPACE_MARKER_NAME
         return marker_path.is_file() and marker_path.read_text(encoding="utf-8") == IMPORT_WORKSPACE_MARKER_CONTENT
-    except (OSError, RuntimeError, UnicodeError):
+    except (OSError, UnicodeError):
         return False
+
+
+def _remove_owned_import_workspace(workspace_root: Path, cache_root: Path) -> bool:
+    if not _is_owned_import_workspace(workspace_root, cache_root):
+        return False
+    shutil.rmtree(workspace_root, ignore_errors=True)
+    if not workspace_root.exists():
+        return True
+
+    # Windows 文件占用可能造成部分删除；重新写回标记，保证退出或下次启动还能安全重试。
+    if _is_import_workspace_path(workspace_root, cache_root):
+        try:
+            (workspace_root / IMPORT_WORKSPACE_MARKER_NAME).write_text(
+                IMPORT_WORKSPACE_MARKER_CONTENT,
+                encoding="utf-8",
+            )
+        except OSError:
+            pass
+    return False
 
 
 def cleanup_import_workspace(workspace_root: Path) -> None:
     """删除已登记且确认由程序创建的单个导入工作区。"""
     if workspace_root not in _ACTIVE_IMPORT_WORKSPACES:
         return
-    _ACTIVE_IMPORT_WORKSPACES.discard(workspace_root)
     if not _is_owned_import_workspace(workspace_root, workspace_root.parent):
+        _ACTIVE_IMPORT_WORKSPACES.discard(workspace_root)
         return
-    shutil.rmtree(workspace_root, ignore_errors=True)
+    if _remove_owned_import_workspace(workspace_root, workspace_root.parent):
+        _ACTIVE_IMPORT_WORKSPACES.discard(workspace_root)
 
 
 def cleanup_stale_import_workspaces(cache_root: Optional[Path] = None) -> None:
@@ -63,7 +93,7 @@ def cleanup_stale_import_workspaces(cache_root: Optional[Path] = None) -> None:
         if child in _ACTIVE_IMPORT_WORKSPACES:
             continue
         if _is_owned_import_workspace(child, target_root):
-            shutil.rmtree(child, ignore_errors=True)
+            _remove_owned_import_workspace(child, target_root)
 
 
 def _cleanup_active_import_workspaces() -> None:
@@ -82,6 +112,15 @@ def _ensure_import_cleanup_registered() -> None:
 def _register_import_workspace(workspace_root: Path) -> None:
     _ensure_import_cleanup_registered()
     _ACTIVE_IMPORT_WORKSPACES.add(workspace_root)
+
+
+@contextmanager
+def _cleanup_workspace_on_error(workspace_root: Path):
+    try:
+        yield
+    except BaseException:
+        cleanup_import_workspace(workspace_root)
+        raise
 
 
 def _build_archive_report_root(source_path: Path) -> Path:
@@ -110,7 +149,7 @@ def _make_import_workspace(source_path: Path, cache_root: Optional[Path] = None)
             IMPORT_WORKSPACE_MARKER_CONTENT,
             encoding="utf-8",
         )
-    except Exception:
+    except BaseException:
         shutil.rmtree(workspace_root, ignore_errors=True)
         raise
     _register_import_workspace(workspace_root)
@@ -564,43 +603,40 @@ class MrpackSourceImporter:
         client_root = workspace["client_root"]
         downloads_root = workspace["downloads_root"]
 
-        _emit(emit, "status", "正在解析 MRPACK 整合包…")
-        extracted_root.mkdir(parents=True, exist_ok=True)
-        client_root.mkdir(parents=True, exist_ok=True)
-        try:
+        with _cleanup_workspace_on_error(workspace["workspace_root"]):
+            _emit(emit, "status", "正在解析 MRPACK 整合包…")
+            extracted_root.mkdir(parents=True, exist_ok=True)
+            client_root.mkdir(parents=True, exist_ok=True)
             _extract_archive(source_path, extracted_root, "MRPACK 文件")
-        except Exception:
-            cleanup_import_workspace(workspace["workspace_root"])
-            raise
 
-        manifest_path = extracted_root / "modrinth.index.json"
-        if not manifest_path.exists():
-            raise RuntimeError("该 MRPACK 中未找到 modrinth.index.json。")
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest_path = extracted_root / "modrinth.index.json"
+            if not manifest_path.exists():
+                raise RuntimeError("该 MRPACK 中未找到 modrinth.index.json。")
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
-        _copy_mrpack_overrides(extracted_root, client_root)
+            _copy_mrpack_overrides(extracted_root, client_root)
 
-        files = manifest.get("files") or []
-        if not isinstance(files, list):
-            raise RuntimeError("MRPACK 清单中的 files 字段格式不正确。")
-        normalized_files = [item for item in files if isinstance(item, dict)]
-        if len(normalized_files) != len(files):
-            raise RuntimeError("MRPACK 清单中的 files 列表存在无法识别的文件项。")
-        self._download_manifest_files(normalized_files, client_root, downloads_root, download_source, emit)
+            files = manifest.get("files") or []
+            if not isinstance(files, list):
+                raise RuntimeError("MRPACK 清单中的 files 字段格式不正确。")
+            normalized_files = [item for item in files if isinstance(item, dict)]
+            if len(normalized_files) != len(files):
+                raise RuntimeError("MRPACK 清单中的 files 列表存在无法识别的文件项。")
+            self._download_manifest_files(normalized_files, client_root, downloads_root, download_source, emit)
 
-        version_candidates = _build_mrpack_candidates(manifest, manifest_path)
-        return {
-            "workspace_root": workspace["workspace_root"],
-            "client_root": client_root,
-            "manifest_path": manifest_path,
-            "version_candidates": version_candidates,
-            "metadata": {
-                "manifest_type": "mrpack",
-                "manifest_name": manifest.get("name") or source_path.stem,
-                "manifest_version_id": manifest.get("versionId") or "",
-                "service_progress_offset": 40,
-            },
-        }
+            version_candidates = _build_mrpack_candidates(manifest, manifest_path)
+            return {
+                "workspace_root": workspace["workspace_root"],
+                "client_root": client_root,
+                "manifest_path": manifest_path,
+                "version_candidates": version_candidates,
+                "metadata": {
+                    "manifest_type": "mrpack",
+                    "manifest_name": manifest.get("name") or source_path.stem,
+                    "manifest_version_id": manifest.get("versionId") or "",
+                    "service_progress_offset": 40,
+                },
+            }
 
     def prepare_mod_scan(self, request: ScanModsRequest, emit) -> PreparedModScanSource:
         source_path = request.source_path.resolve()
@@ -613,6 +649,7 @@ class MrpackSourceImporter:
         )
         mods_path = prepared["client_root"] / "mods"
         if not mods_path.is_dir():
+            cleanup_import_workspace(prepared["workspace_root"])
             raise RuntimeError("导入后的 MRPACK 中未找到 mods 目录。")
         return PreparedModScanSource(
             source_kind="mrpack",
@@ -781,6 +818,23 @@ class ZipModpackSourceImporter:
         _emit(emit, "log", f"开始解析 ZIP 整合包：{source_path}")
         _emit(emit, "progress", 1)
         probe_workspace = self._extract_zip(source_path, cache_root=cache_root)
+        with _cleanup_workspace_on_error(probe_workspace["workspace_root"]):
+            return self._identify_zip_workspace(
+                source_path,
+                download_source,
+                emit,
+                cache_root,
+                probe_workspace,
+            )
+
+    def _identify_zip_workspace(
+        self,
+        source_path: Path,
+        download_source: str,
+        emit,
+        cache_root: Optional[Path],
+        probe_workspace: Dict[str, Path],
+    ) -> Dict[str, Any]:
         extracted_root = probe_workspace["extracted_root"]
         _emit(emit, "status", "ZIP 解压完成，正在识别整合包结构…")
         _emit(emit, "log", f"ZIP 解压完成：{source_path.name}")
