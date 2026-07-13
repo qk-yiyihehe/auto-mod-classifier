@@ -34,8 +34,8 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 
-APP_TITLE = "自动筛选模组分类器 3.01"
-USER_AGENT = "AutoModClassifier/3.01 (+Codex)"
+APP_TITLE = "自动筛选模组分类器 3.02"
+USER_AGENT = "AutoModClassifier/3.02 (+Codex)"
 SYSTEM_ENCODING = locale.getpreferredencoding(False) or "utf-8"
 SUBPROCESS_CREATIONFLAGS = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 TOOL_DIR_NAME = "_自动筛选模组分类器"
