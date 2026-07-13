@@ -294,16 +294,6 @@ class LegacyServerBuildService:
                 except Exception:
                     pass
             emit("error", failure_payload if failure_payload.get("kind") else error_text)
-            has_server = False
-            try:
-                has_server = any(request.output_dir.glob("*.jar")) if request.output_dir.exists() else False
-            except Exception:
-                pass
-            if not has_server and request.output_dir.exists():
-                try:
-                    shutil.rmtree(request.output_dir, ignore_errors=True)
-                except Exception:
-                    pass
         finally:
             if classifier is not None:
                 try:
