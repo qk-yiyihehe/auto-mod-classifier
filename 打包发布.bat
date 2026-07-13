@@ -46,7 +46,7 @@ if not exist "%SCRIPT_DIR%%ICON_FILE%" (
 
 REM Run PyInstaller inside the project directory.
 pushd "%SCRIPT_DIR%"
-python -m PyInstaller --noconfirm --clean --noconsole --onefile --hidden-import=DrissionPage --exclude-module=cv2 --exclude-module=PIL --exclude-module=numpy --exclude-module=openpyxl --name "%APP_NAME%" --icon "%ICON_FILE%" --add-data "%ICON_FILE%;." --version-file "%SCRIPT_DIR%pyinstaller_version_info.txt" "%ENTRY_FILE%"
+python -m PyInstaller --noconfirm --clean --noconsole --onefile --hidden-import=DrissionPage --exclude-module=cv2 --exclude-module=PIL --exclude-module=numpy --exclude-module=openpyxl --exclude-module=cloudscraper --exclude-module=curl_cffi --name "%APP_NAME%" --icon "%ICON_FILE%" --add-data "%ICON_FILE%;." --version-file "%SCRIPT_DIR%pyinstaller_version_info.txt" "%ENTRY_FILE%"
 set "BUILD_ERROR=%ERRORLEVEL%"
 popd
 
