@@ -1,11 +1,13 @@
+import concurrent.futures
 import hashlib
 import re
+import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from ..classifier import classify_jars_parallel, rerun_unknown_classifications
-from ..download_support import DownloadStatsReporter, build_idle_download_status_text
+from ..download_support import DownloadStatsReporter, build_idle_download_status_text, choose_download_worker_count
 from ..shared import *
 from .common import ServerBuilderCommonService
 from .context import ServerBuilderRuntime
@@ -54,6 +56,13 @@ class FabricModsResolution:
 
     def forced_skip_files(self) -> set[str]:
         return set(self.loader_files) | set(self.duplicate_fabric_api_files)
+
+
+@dataclass(frozen=True)
+class InstallerDependency:
+    url: str
+    relative_path: Path
+    sha1: str
 
 
 def _normalize_failure_text(text: str) -> str:
@@ -1485,6 +1494,128 @@ class ServerInstallService:
             reporter.close()
         return destination
 
+    def _read_installer_dependencies(self, installer_path: Path) -> List[InstallerDependency]:
+        dependencies: Dict[str, InstallerDependency] = {}
+        with zipfile.ZipFile(installer_path) as archive:
+            for manifest_name in ("install_profile.json", "version.json"):
+                try:
+                    data = json.loads(archive.read(manifest_name).decode("utf-8"))
+                except KeyError:
+                    continue
+                except Exception as exc:
+                    raise RuntimeError(f"无法读取安装器依赖清单 {manifest_name}：{exc}") from exc
+
+                libraries = data.get("libraries") if isinstance(data, dict) else None
+                if not isinstance(libraries, list):
+                    continue
+                for library in libraries:
+                    artifact = ((library.get("downloads") or {}).get("artifact") or {}) if isinstance(library, dict) else {}
+                    url = str(artifact.get("url") or "").strip()
+                    raw_path = str(artifact.get("path") or "").strip().replace("\\", "/")
+                    if not url or not raw_path:
+                        continue
+                    relative_path = Path(raw_path)
+                    if relative_path.is_absolute() or ".." in relative_path.parts:
+                        raise RuntimeError(f"安装器依赖清单包含不安全路径：{raw_path}")
+                    key = relative_path.as_posix().lower()
+                    dependencies[key] = InstallerDependency(
+                        url=url,
+                        relative_path=relative_path,
+                        sha1=str(artifact.get("sha1") or "").strip().lower(),
+                    )
+        return list(dependencies.values())
+
+    def _is_dependency_ready(self, target_path: Path, expected_sha1: str) -> bool:
+        if not target_path.is_file():
+            return False
+        if not expected_sha1:
+            return True
+        return self._calculate_sha1(target_path) == expected_sha1
+
+    def prepare_installer_dependencies(
+        self,
+        output_root: Path,
+        candidate: VersionCandidate,
+        installer_path: Path,
+    ) -> None:
+        if candidate.loader not in {LoaderType.FORGE.value, LoaderType.NEOFORGE.value}:
+            return
+
+        try:
+            dependencies = self._read_installer_dependencies(installer_path)
+        except Exception as exc:
+            self.common.log_line(f"无法提前解析安装器依赖，本次交由安装器自行下载：{exc}")
+            return
+        if not dependencies:
+            return
+
+        library_root = (output_root / "libraries").resolve()
+        pending: List[Tuple[InstallerDependency, Path]] = []
+        reused_count = 0
+        for dependency in dependencies:
+            target_path = (library_root / dependency.relative_path).resolve()
+            if not self.common.is_same_or_nested_path(library_root, target_path):
+                self.common.log_line(f"跳过超出 libraries 目录的安装器依赖：{dependency.relative_path}")
+                continue
+            if self._is_dependency_ready(target_path, dependency.sha1):
+                reused_count += 1
+                continue
+            if target_path.exists():
+                try:
+                    target_path.unlink()
+                except OSError:
+                    pass
+            pending.append((dependency, target_path))
+
+        if not pending:
+            self.common.log_line(f"安装器依赖已全部就绪：复用 {reused_count}/{len(dependencies)} 个文件。")
+            return
+
+        worker_count = choose_download_worker_count(len(pending))
+        self.common.log_line(
+            f"提前下载 {len(pending)} 个安装器依赖，使用 {worker_count} 个并发线程"
+            + (f"，另复用 {reused_count} 个现有文件。" if reused_count else "。")
+        )
+        reporter = DownloadStatsReporter(self.runtime.set_download_status, len(pending), worker_count)
+
+        def download_dependency(item: Tuple[InstallerDependency, Path]) -> None:
+            dependency, target_path = item
+            self.common.http_download(
+                dependency.url,
+                target_path,
+                reporter=reporter,
+                display_name=dependency.relative_path.name,
+            )
+            if dependency.sha1 and self._calculate_sha1(target_path) != dependency.sha1:
+                try:
+                    target_path.unlink()
+                except OSError:
+                    pass
+                raise RuntimeError(f"SHA1 校验失败：{dependency.relative_path}")
+
+        failures: List[Tuple[InstallerDependency, Exception]] = []
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
+                future_map = {executor.submit(download_dependency, item): item[0] for item in pending}
+                for future in concurrent.futures.as_completed(future_map):
+                    try:
+                        future.result()
+                    except Exception as exc:
+                        self.runtime.raise_if_cancelled()
+                        failures.append((future_map[future], exc))
+        finally:
+            reporter.close()
+
+        if failures:
+            self.common.log_line(
+                f"安装器依赖已提前完成 {len(pending) - len(failures)}/{len(pending)} 个；"
+                f"其余 {len(failures)} 个交由安装器继续下载。"
+            )
+            for dependency, exc in failures[:3]:
+                self.common.log_line(f"提前下载失败：{dependency.relative_path} | {exc}")
+        else:
+            self.common.log_line(f"安装器依赖提前下载完成：{len(pending)}/{len(pending)} 个。")
+
     def _read_json_file(self, path: Path) -> Optional[Dict[str, Any]]:
         if not path.is_file():
             return None
@@ -1673,6 +1804,7 @@ class ServerInstallService:
 
     def install_server(self, output_root: Path, candidate: VersionCandidate, installer_path: Path, java_runtime: JavaRuntime) -> None:
         prepared_server_jar = self.prepare_vanilla_server_jar(output_root, candidate)
+        self.prepare_installer_dependencies(output_root, candidate, installer_path)
         if candidate.loader == LoaderType.FABRIC.value:
             args = [
                 str(java_runtime.path),
@@ -1690,18 +1822,14 @@ class ServerInstallService:
                 args.append("-downloadMinecraft")
         else:
             args = [str(java_runtime.path), "-jar", str(installer_path), "--installServer", str(output_root)]
-        install_step = 0
-
         def update_install_download_status(line: str) -> None:
-            nonlocal install_step
             text = line.strip()
             if not text:
                 return
             lowered = text.lower()
             if "下载" not in text and "download" not in lowered:
                 return
-            install_step += 1
-            self.runtime.set_download_status(f"安装器内部下载 [{install_step}]：{text}")
+            self.runtime.set_download_status(f"安装器内部下载：{text}")
 
         self.runtime.set_download_status("安装器已启动，正在准备下载服务端环境…")
         try:
