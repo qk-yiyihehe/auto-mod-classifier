@@ -35,6 +35,8 @@ class ClassificationPipeline:
         completed = 0
         done_event = threading.Event()
         results_lock = threading.Lock()
+        pending_remote: List[tuple[int, Path, ModMeta, Classification]] = []
+        pending_lock = threading.Lock()
 
         remote_queues = {
             "modrinth": _RemoteGate(max_workers=worker_count),
@@ -58,23 +60,40 @@ class ClassificationPipeline:
         def finish_classification(index: int, jar: Path, meta: ModMeta, classification: Classification) -> None:
             finish_row(index, jar, build_mod_result_row(jar, meta, classification))
 
-        def run_supplemental_chain(jar: Path, meta: ModMeta) -> Optional[Classification]:
+        def run_supplemental_chain(jar: Path, meta: ModMeta, sha1: str = "") -> Optional[Classification]:
             for source in self.strategy.get_supplemental_sources(options):
-                classification = source.lookup(jar, meta)
+                classification = source.lookup(jar, meta, sha1=sha1)
                 if classification and classification.category != "unknown":
                     return classification
             return None
 
-        def run_remote_chain(index: int, jar: Path, meta: ModMeta, local: Classification) -> None:
+        def run_remote_chain(
+            index: int,
+            jar: Path,
+            meta: ModMeta,
+            local: Classification,
+            exact_outcome=None,
+        ) -> None:
             remote_results: List[RemoteResolutionResult] = []
             try:
-                supplemental = run_supplemental_chain(jar, meta)
+                exact_fallback = exact_outcome.fallback if exact_outcome is not None else None
+                if exact_fallback is not None:
+                    remote_results.append(
+                        RemoteResolutionResult(
+                            source_name=exact_fallback.source,
+                            preserve_unknown=True,
+                            classification=exact_fallback,
+                        )
+                    )
+                supplemental = run_supplemental_chain(jar, meta, exact_outcome.sha1 if exact_outcome is not None else "")
                 if supplemental and supplemental.category != "unknown":
                     finish_classification(index, jar, meta, supplemental)
                     return
 
                 # 远程来源顺序不写死在这里，而是交给 strategy 决定。
                 for source in self.strategy.get_remote_sources(options):
+                    if exact_outcome is not None and source.name in exact_outcome.matched_sources:
+                        continue
                     classification = self._run_remote_source(source, remote_queues, meta)
                     if classification and classification.category != "unknown":
                         finish_classification(index, jar, meta, classification)
@@ -99,18 +118,36 @@ class ClassificationPipeline:
                 if self.strategy.is_local_final(local):
                     finish_classification(index, jar, meta, local)
                     return
-                remote_executor.submit(run_remote_chain, index, jar, meta, local)
+                with pending_lock:
+                    pending_remote.append((index, jar, meta, local))
             except Exception as exc:
                 finish_row(index, jar, build_mod_error_row(jar, str(exc)))
 
-        local_executor = concurrent.futures.ThreadPoolExecutor(max_workers=worker_count)
         remote_executor = concurrent.futures.ThreadPoolExecutor(max_workers=worker_count)
         try:
-            for index, jar in enumerate(jar_files):
-                local_executor.submit(run_local, index, jar)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as local_executor:
+                for index, jar in enumerate(jar_files):
+                    local_executor.submit(run_local, index, jar)
+
+            exact_outcomes = {}
+            resolver = getattr(self.strategy, "exact_match_resolver", None)
+            if resolver is not None and pending_remote:
+                try:
+                    exact_outcomes = resolver.resolve(
+                        [(jar, meta) for _index, jar, meta, _local in pending_remote],
+                        options,
+                    )
+                except Exception:
+                    exact_outcomes = {}
+
+            for index, jar, meta, local in pending_remote:
+                outcome = exact_outcomes.get(str(jar))
+                if outcome is not None and outcome.classification is not None:
+                    finish_classification(index, jar, meta, outcome.classification)
+                    continue
+                remote_executor.submit(run_remote_chain, index, jar, meta, local, outcome)
             done_event.wait()
         finally:
-            local_executor.shutdown(wait=True, cancel_futures=False)
             remote_executor.shutdown(wait=True, cancel_futures=False)
 
         return [row for row in results if row is not None]

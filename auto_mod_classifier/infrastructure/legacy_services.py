@@ -49,9 +49,9 @@ class LegacyModScanService:
                 emit("log", f"联网分类使用 {worker_count} 个并发线程")
             if request.use_offline_database:
                 if classifier.offline_database.is_available():
-                    emit("log", f"已启用本地离线库优先查询：{classifier.offline_database.db_path}")
+                    emit("log", f"已启用本地离线库兜底查询：{classifier.offline_database.db_path}")
                 else:
-                    emit("log", "已启用本地离线库优先查询，但程序目录旁未找到 db.sqlite，本次自动回退到联网查询。")
+                    emit("log", "已启用本地离线库兜底查询，但程序目录旁未找到 db.sqlite；本次继续使用平台精确匹配和联网兜底。")
 
             first_span = 72 if request.enable_second_pass else 88
 

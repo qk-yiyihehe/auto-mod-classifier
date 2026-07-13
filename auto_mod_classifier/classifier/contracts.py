@@ -34,7 +34,7 @@ class SupplementalClassificationSource(Protocol):
     def is_enabled(self, options: ClassificationOptions) -> bool:
         ...
 
-    def lookup(self, jar_path: Path, meta: ModMeta) -> Optional[Classification]:
+    def lookup(self, jar_path: Path, meta: ModMeta, sha1: str = "") -> Optional[Classification]:
         ...
 
 

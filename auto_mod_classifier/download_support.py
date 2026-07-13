@@ -507,6 +507,46 @@ def http_get_json(
     return _fetch_with_attempts(url, download_source, timeout, lambda raw: json.loads(raw.decode("utf-8")), retry_rounds)
 
 
+def http_post_json(
+    url: str,
+    payload: Any,
+    download_source: str,
+    timeout: int = DEFAULT_METADATA_TIMEOUT_SECONDS,
+    retry_rounds: int = DEFAULT_REQUEST_RETRY_ROUNDS,
+) -> Any:
+    """提交 JSON，并沿用下载源与代理路线的失败切换策略。"""
+    body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    total_rounds = max(1, int(retry_rounds))
+    last_error: Optional[Exception] = None
+
+    for round_index in range(total_rounds):
+        attempts = build_download_attempts(url, download_source)
+        if not attempts:
+            raise RuntimeError("未提供可用请求地址。")
+
+        for attempt in attempts:
+            try:
+                req = urllib.request.Request(
+                    attempt.url,
+                    data=body,
+                    headers={"User-Agent": USER_AGENT, "Content-Type": "application/json"},
+                    method="POST",
+                )
+                started_at = time.monotonic()
+                with _open_request(req, attempt.route_code, timeout=timeout) as resp:
+                    raw = resp.read()
+                _record_attempt_score(attempt, time.monotonic() - started_at)
+                return json.loads(raw.decode("utf-8"))
+            except Exception as exc:
+                last_error = exc
+                _record_attempt_failure(attempt)
+
+        if round_index + 1 < total_rounds:
+            time.sleep(_build_retry_delay_seconds(round_index))
+
+    raise RuntimeError(f"提交内容失败（已重试 {total_rounds} 轮）：{url}\n{_format_exception_short(last_error or RuntimeError('未知错误'))}")
+
+
 def http_probe(
     url: str,
     download_source: str,

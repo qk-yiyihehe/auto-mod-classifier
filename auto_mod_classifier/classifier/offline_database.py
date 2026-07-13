@@ -58,6 +58,9 @@ class OfflineModDatabase:
         if match is None:
             return None
 
+        return self.lookup_match(meta, match)
+
+    def lookup_match(self, meta: ModMeta, match: OfflineDatabaseMatch) -> Classification:
         source, reason, evidence_url = self._build_evidence(match)
         category = self.classify_meta_with_match(meta, match)
         if not category:
@@ -70,6 +73,12 @@ class OfflineModDatabase:
 
         sha1 = self._compute_sha1(jar_path)
         if not sha1:
+            return None
+
+        return self.find_match_by_sha1(sha1)
+
+    def find_match_by_sha1(self, sha1: str) -> Optional[OfflineDatabaseMatch]:
+        if not self.is_available() or not sha1:
             return None
 
         try:

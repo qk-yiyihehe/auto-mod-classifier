@@ -1857,9 +1857,9 @@ class ServerInstallService:
             self.common.log_line(f"联网分类使用 {worker_count} 个并发线程。")
         if getattr(self.runtime.classifier, "use_offline_database", False):
             if self.runtime.classifier.offline_database.is_available():
-                self.common.log_line(f"已启用本地离线库优先查询：{self.runtime.classifier.offline_database.db_path}")
+                self.common.log_line(f"已启用本地离线库兜底查询：{self.runtime.classifier.offline_database.db_path}")
             else:
-                self.common.log_line("已启用本地离线库优先查询，但程序目录旁未找到 db.sqlite，本次自动回退到联网查询。")
+                self.common.log_line("已启用本地离线库兜底查询，但程序目录旁未找到 db.sqlite；本次继续使用平台精确匹配和联网兜底。")
 
         first_span = 6 if self.runtime.enable_second_pass else 9
 

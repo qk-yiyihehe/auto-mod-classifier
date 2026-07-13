@@ -14,6 +14,7 @@ from .contracts import (
     RemoteClassificationSource,
     SupplementalClassificationSource,
 )
+from .exact_match import BatchExactMatchResolver
 from .models import ClassificationOptions, RemoteResolutionResult
 from .text_utils import ClassifierTextTools
 
@@ -375,12 +376,16 @@ class OfflineDatabaseSource:
     def is_enabled(self, options: ClassificationOptions) -> bool:
         return options.use_offline_database and self.classifier.offline_database.is_available()
 
-    def lookup(self, jar_path: Path, meta: ModMeta) -> Optional[Classification]:
-        match = self.classifier.offline_database.find_match(jar_path)
+    def lookup(self, jar_path: Path, meta: ModMeta, sha1: str = "") -> Optional[Classification]:
+        match = (
+            self.classifier.offline_database.find_match_by_sha1(sha1)
+            if sha1
+            else self.classifier.offline_database.find_match(jar_path)
+        )
         if match is None:
             return None
 
-        local_classification = self.classifier.offline_database.lookup(jar_path, meta)
+        local_classification = self.classifier.offline_database.lookup_match(meta, match)
         if local_classification and local_classification.category != "unknown":
             return local_classification
 
@@ -614,6 +619,7 @@ class DefaultClassificationStrategy(ClassificationStrategy):
         self.text_tools = ClassifierTextTools()
         self.metadata_reader = JarMetadataReader(self.text_tools)
         self.local_classifier = DefaultLocalClassifier(self.text_tools)
+        self.exact_match_resolver = BatchExactMatchResolver()
         self.supplemental_sources: list[SupplementalClassificationSource] = [
             OfflineDatabaseSource(classifier),
         ]
