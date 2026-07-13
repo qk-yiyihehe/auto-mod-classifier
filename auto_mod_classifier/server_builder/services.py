@@ -1874,7 +1874,8 @@ class ServerInstallService:
         exact_stage_labels = {
             "sha1": "正在计算文件 SHA1",
             "modrinth": "正在批量查询 Modrinth",
-            "curseforge": "正在计算 CurseForge 指纹",
+            "curseforge_hash": "正在计算 CurseForge 指纹",
+            "curseforge": "正在批量查询 CurseForge",
         }
 
         def exact_match_progress(stage: str, completed: int, inner_total: int, jar: Optional[Path]) -> None:
@@ -1883,7 +1884,8 @@ class ServerInstallService:
             if jar is not None:
                 detail += f" {jar.name}"
             self.runtime.set_status(f"{TaskStage.CLASSIFY_MODS.value}：{detail}")
-            if completed == 0 or completed == inner_total or completed % 25 == 0:
+            is_api_batch = stage in {"modrinth", "curseforge"}
+            if is_api_batch or completed == 0 or completed == inner_total or completed % 25 == 0:
                 self.common.log_line(detail + "。")
 
         results = classify_jars_parallel(
