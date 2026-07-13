@@ -76,3 +76,10 @@ class ServerBuilderCore:
 
     def build_server(self, client_dir: Path, output_root: Path) -> Dict[str, Path]:
         return self.workflow.build_server(client_dir, output_root)
+
+    def cancel(self) -> None:
+        self.runtime.request_cancel()
+        try:
+            self.runtime.classifier.close_browser()
+        except Exception:
+            pass

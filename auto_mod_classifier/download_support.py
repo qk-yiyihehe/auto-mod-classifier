@@ -554,6 +554,7 @@ def http_download(
     log_callback: Optional[Callable[[str], None]] = None,
     log_success: bool = True,
     retry_rounds: int = DEFAULT_REQUEST_RETRY_ROUNDS,
+    cancel_check: Optional[Callable[[], None]] = None,
 ) -> None:
     """下载单个文件，支持镜像回退、直连/代理双路线、进度统计和原子替换。"""
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -571,11 +572,15 @@ def http_download(
         total_rounds = max(1, int(retry_rounds))
         last_error: Optional[Exception] = None
         for round_index in range(total_rounds):
+            if cancel_check is not None:
+                cancel_check()
             attempts = build_download_attempts(urls, download_source)
             if not attempts:
                 raise RuntimeError("未提供可用下载地址。")
 
             for index, attempt in enumerate(attempts, start=1):
+                if cancel_check is not None:
+                    cancel_check()
                 try:
                     req = urllib.request.Request(attempt.url, headers={"User-Agent": USER_AGENT})
                     started_at = time.monotonic()
@@ -583,6 +588,8 @@ def http_download(
                     with _open_request(req, attempt.route_code, timeout=timeout) as resp:
                         with temp_path.open("wb") as fp:
                             while True:
+                                if cancel_check is not None:
+                                    cancel_check()
                                 chunk = resp.read(_DOWNLOAD_CHUNK_SIZE)
                                 if not chunk:
                                     break
@@ -601,6 +608,8 @@ def http_download(
                         file_started = False
                     return
                 except Exception as exc:
+                    if cancel_check is not None:
+                        cancel_check()
                     last_error = exc
                     _record_attempt_failure(attempt)
                     if temp_path.exists():
@@ -611,6 +620,8 @@ def http_download(
                         )
 
             if round_index + 1 < total_rounds:
+                if cancel_check is not None:
+                    cancel_check()
                 if log_callback is not None:
                     log_callback(f"[重试下载] {file_label} | 当前下载路线全部失败，准备重试第 {round_index + 2}/{total_rounds} 轮。")
                 time.sleep(_build_retry_delay_seconds(round_index))

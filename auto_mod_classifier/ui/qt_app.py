@@ -204,6 +204,7 @@ class App(FluentWindow):
         self._stage_event_mode: Dict[str, bool] = {"mod": False, "server": False}
         self._task_dialog_shown: Dict[str, bool] = {"mod": False, "server": False}
         self._runtime_ref: Any = None
+        self._closing_event = threading.Event()
         self._settings_data = self._load_settings_data()
         self._theme_mode: Theme = self._theme_from_index(int(self._settings_data.get("theme_index", 0)))
         self._active_report_key = "mod"
@@ -781,7 +782,9 @@ class App(FluentWindow):
         event = threading.Event()
         request = {"kind": "version", "candidates": candidates, "event": event, "response": None}
         self.ui_queue.put({"panel": "server", "kind": "ui-request", "payload": request})
-        event.wait()
+        while not event.wait(0.1):
+            if self._closing_event.is_set():
+                return None
         return request["response"]
 
     def request_checklist(self, title: str, message: str, items: List[ReviewItem]) -> Optional[List[str]]:
@@ -795,7 +798,9 @@ class App(FluentWindow):
             "response": None,
         }
         self.ui_queue.put({"panel": "server", "kind": "ui-request", "payload": request})
-        event.wait()
+        while not event.wait(0.1):
+            if self._closing_event.is_set():
+                return None
         return request["response"]
 
     def request_continue_wait(self, title: str, message: str, seconds: int) -> bool:
@@ -809,7 +814,9 @@ class App(FluentWindow):
             "response": False,
         }
         self.ui_queue.put({"panel": "server", "kind": "ui-request", "payload": request})
-        event.wait()
+        while not event.wait(0.1):
+            if self._closing_event.is_set():
+                return False
         return bool(request["response"])
 
     def poll_queue(self) -> None:
@@ -1322,26 +1329,36 @@ class App(FluentWindow):
 
     def set_runtime_ref(self, runtime: Any) -> None:
         self._runtime_ref = runtime
+        if runtime is not None and self._closing_event.is_set():
+            self._stop_runtime(runtime)
 
-    def _close_runtime(self) -> None:
-        runtime = self._runtime_ref
-        self._runtime_ref = None
-        if runtime is None:
-            return
+    def _stop_runtime(self, runtime: Any) -> None:
         try:
+            cancel = getattr(runtime, "cancel", None)
+            if callable(cancel):
+                cancel()
             close_browser = getattr(runtime, "close_browser", None)
             if callable(close_browser):
                 close_browser()
-                return
             close = getattr(runtime, "close", None)
             if callable(close):
                 close()
         except Exception:
             pass
 
+    def _close_runtime(self) -> None:
+        runtime = self._runtime_ref
+        self._runtime_ref = None
+        if runtime is not None:
+            self._stop_runtime(runtime)
+
     def closeEvent(self, event: QCloseEvent) -> None:
+        self._closing_event.set()
         self.queue_timer.stop()
         self._close_runtime()
+        worker = self.worker_thread
+        if worker is not None and worker.is_alive() and worker is not threading.current_thread():
+            worker.join(timeout=3)
         try:
             browser_dir = Path(tempfile.gettempdir()) / "_mcmod_browser_data"
             if browser_dir.exists():

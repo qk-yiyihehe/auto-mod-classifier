@@ -1419,6 +1419,8 @@ class ServerInstallService:
             errors="replace",
             creationflags=SUBPROCESS_CREATIONFLAGS,
         )
+        self.runtime.set_active_process(process)
+        self.runtime.raise_if_cancelled()
 
         stream_queue: "queue.Queue[Optional[str]]" = queue.Queue()
 
@@ -1432,6 +1434,7 @@ class ServerInstallService:
         deadline = time.time() + timeout_seconds
         stream_closed = False
         while True:
+            self.runtime.raise_if_cancelled()
             try:
                 item = stream_queue.get(timeout=0.2)
             except queue.Empty:
@@ -1460,7 +1463,10 @@ class ServerInstallService:
 
         if process.poll() is None:
             process.kill()
+            self.runtime.clear_active_process(process)
             raise RuntimeError(f"命令执行超时：{display}")
+        self.runtime.clear_active_process(process)
+        self.runtime.raise_if_cancelled()
         return process.returncode, lines
 
     def download_installer(self, spec: InstallerSpec, temp_dir: Path) -> Path:
@@ -2004,9 +2010,11 @@ class ServerLaunchService:
         last_path_error = False
 
         for attempt_index in range(2):
+            self.runtime.raise_if_cancelled()
             if attempt_index > 0:
                 self.common.log_line("检测到批处理启动阶段疑似路径异常，1 秒后重试一次。")
                 time.sleep(1)
+                self.runtime.raise_if_cancelled()
 
             process = subprocess.Popen(
                 ["cmd.exe", "/d", "/c", "call", str(launch_path)],
@@ -2019,6 +2027,8 @@ class ServerLaunchService:
                 errors="replace",
                 creationflags=SUBPROCESS_CREATIONFLAGS,
             )
+            self.runtime.set_active_process(process)
+            self.runtime.raise_if_cancelled()
 
             line_queue: "queue.Queue[Optional[str]]" = queue.Queue()
 
@@ -2041,6 +2051,7 @@ class ServerLaunchService:
             path_error_detected = False
 
             while True:
+                self.runtime.raise_if_cancelled()
                 try:
                     item = line_queue.get(timeout=0.2)
                 except queue.Empty:
@@ -2085,6 +2096,7 @@ class ServerLaunchService:
                         self.stop_process(process)
                         break
                     subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], capture_output=True, creationflags=SUBPROCESS_CREATIONFLAGS)
+                    self.runtime.clear_active_process(process)
                     raise RuntimeError(
                         f"服务端{('首次启动' if mode == 'init' else '验证启动')}超过 {max_timeout_seconds} 秒仍未完成。"
                     )
@@ -2098,10 +2110,13 @@ class ServerLaunchService:
                         self.common.log_line("已按你的选择继续等待 120 秒，仍会持续观察新的启动日志。")
                         continue
                     subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], capture_output=True, creationflags=SUBPROCESS_CREATIONFLAGS)
+                    self.runtime.clear_active_process(process)
                     raise RuntimeError(
                         f"服务端{('首次启动' if mode == 'init' else '验证启动')}已连续 {idle_timeout_seconds} 秒没有新输出，判定为卡住。"
                     )
 
+            self.runtime.clear_active_process(process)
+            self.runtime.raise_if_cancelled()
             if mode == "init":
                 if eula_path.exists() or properties_path.exists():
                     self.common.log_line(

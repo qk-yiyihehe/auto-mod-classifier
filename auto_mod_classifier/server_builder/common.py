@@ -34,6 +34,7 @@ class ServerBuilderCommonService:
 
     def set_stage(self, stage: TaskStage, progress: float, detail: str) -> None:
         # 阶段更新也统一收口，界面和日志会一起同步。
+        self.runtime.raise_if_cancelled()
         self.runtime.set_progress(progress)
         stage_key = self.STAGE_EVENT_MAP.get(stage)
         if stage_key:
@@ -81,6 +82,7 @@ class ServerBuilderCommonService:
             timeout=60,
             display_name=display_name,
             log_callback=log_callback,
+            cancel_check=self.runtime.raise_if_cancelled,
         )
 
     def get_application_dir(self) -> Path:

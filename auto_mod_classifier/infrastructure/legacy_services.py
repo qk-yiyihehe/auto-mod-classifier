@@ -242,6 +242,7 @@ class LegacyServerBuildService:
                 java_selection_mode=request.java_selection_mode,
                 prepared_version_candidates=source.version_candidates,
             )
+            set_runtime_ref(builder)
             result = builder.build_server(source.client_dir, request.output_dir)
             summary = "\n".join(
                 [
