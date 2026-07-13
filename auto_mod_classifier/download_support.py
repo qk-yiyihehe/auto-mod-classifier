@@ -462,6 +462,7 @@ def _fetch_with_attempts(
     timeout: int,
     parser: Callable[[bytes], Any],
     retry_rounds: int = DEFAULT_REQUEST_RETRY_ROUNDS,
+    request_gate: Any = None,
 ) -> Any:
     total_rounds = max(1, int(retry_rounds))
     last_error: Optional[Exception] = None
@@ -473,13 +474,19 @@ def _fetch_with_attempts(
 
         for attempt in attempts:
             try:
+                if request_gate is not None:
+                    request_gate.wait()
                 req = urllib.request.Request(attempt.url, headers={"User-Agent": USER_AGENT})
                 started_at = time.monotonic()
                 with _open_request(req, attempt.route_code, timeout=timeout) as resp:
                     raw = resp.read()
+                    if request_gate is not None:
+                        request_gate.update(getattr(resp, "headers", {}), getattr(resp, "status", 200))
                 _record_attempt_score(attempt, time.monotonic() - started_at)
                 return parser(raw)
             except Exception as exc:
+                if request_gate is not None and isinstance(exc, urllib.error.HTTPError):
+                    request_gate.update(exc.headers or {}, exc.code)
                 last_error = exc
                 _record_attempt_failure(attempt)
 
@@ -503,8 +510,16 @@ def http_get_json(
     download_source: str,
     timeout: int = DEFAULT_METADATA_TIMEOUT_SECONDS,
     retry_rounds: int = DEFAULT_REQUEST_RETRY_ROUNDS,
+    request_gate: Any = None,
 ) -> Any:
-    return _fetch_with_attempts(url, download_source, timeout, lambda raw: json.loads(raw.decode("utf-8")), retry_rounds)
+    return _fetch_with_attempts(
+        url,
+        download_source,
+        timeout,
+        lambda raw: json.loads(raw.decode("utf-8")),
+        retry_rounds,
+        request_gate,
+    )
 
 
 def http_post_json(
@@ -513,6 +528,7 @@ def http_post_json(
     download_source: str,
     timeout: int = DEFAULT_METADATA_TIMEOUT_SECONDS,
     retry_rounds: int = DEFAULT_REQUEST_RETRY_ROUNDS,
+    request_gate: Any = None,
 ) -> Any:
     """提交 JSON，并沿用下载源与代理路线的失败切换策略。"""
     body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
@@ -526,6 +542,8 @@ def http_post_json(
 
         for attempt in attempts:
             try:
+                if request_gate is not None:
+                    request_gate.wait()
                 req = urllib.request.Request(
                     attempt.url,
                     data=body,
@@ -535,9 +553,13 @@ def http_post_json(
                 started_at = time.monotonic()
                 with _open_request(req, attempt.route_code, timeout=timeout) as resp:
                     raw = resp.read()
+                    if request_gate is not None:
+                        request_gate.update(getattr(resp, "headers", {}), getattr(resp, "status", 200))
                 _record_attempt_score(attempt, time.monotonic() - started_at)
                 return json.loads(raw.decode("utf-8"))
             except Exception as exc:
+                if request_gate is not None and isinstance(exc, urllib.error.HTTPError):
+                    request_gate.update(exc.headers or {}, exc.code)
                 last_error = exc
                 _record_attempt_failure(attempt)
 

@@ -4,6 +4,7 @@ import concurrent.futures
 import hashlib
 import json
 import os
+import threading
 import time
 import urllib.parse
 from dataclasses import dataclass, field
@@ -17,7 +18,8 @@ from .models import ClassificationOptions
 
 _MODRINTH_BATCH_SIZE = 50
 _CURSEFORGE_BATCH_SIZE = 25
-_EXACT_API_WORKERS = 4
+_MODRINTH_API_WORKERS = 10
+_CURSEFORGE_API_WORKERS = 4
 _CURSEFORGE_WHITESPACE = {9, 10, 13, 32}
 _CURSEFORGE_WHITESPACE_BYTES = b"\t\n\r "
 _CURSEFORGE_HASH_WORKERS = 4
@@ -34,6 +36,53 @@ class ExactMatchOutcome:
 
 
 ExactMatchResultCallback = Callable[[Path, ExactMatchOutcome], None]
+
+
+class _ApiRateLimitGate:
+    def __init__(self, minimum_interval: float, dynamic_headers: bool):
+        self.minimum_interval = minimum_interval
+        self.dynamic_headers = dynamic_headers
+        self._lock = threading.Lock()
+        self._next_request_at = 0.0
+
+    def wait(self) -> None:
+        with self._lock:
+            now = time.monotonic()
+            if now < self._next_request_at:
+                time.sleep(self._next_request_at - now)
+            self._next_request_at = time.monotonic() + self.minimum_interval
+
+    def update(self, headers, status_code: int = 200) -> None:
+        retry_after = self._header_float(headers, "Retry-After")
+        reset_seconds = self._header_float(headers, "X-Ratelimit-Reset") if self.dynamic_headers else 0.0
+        remaining = self._header_int(headers, "X-Ratelimit-Remaining") if self.dynamic_headers else None
+
+        delay = 0.0
+        if status_code == 429:
+            delay = max(retry_after, reset_seconds, 1.0)
+        elif self.dynamic_headers and remaining is not None and remaining <= 0:
+            delay = max(reset_seconds, self.minimum_interval)
+        elif self.dynamic_headers and remaining and reset_seconds > 0:
+            delay = max(reset_seconds / remaining, self.minimum_interval)
+
+        if delay > 0:
+            with self._lock:
+                self._next_request_at = max(self._next_request_at, time.monotonic() + delay)
+
+    @staticmethod
+    def _header_float(headers, name: str) -> float:
+        try:
+            return max(0.0, float(headers.get(name, "0") or 0))
+        except (TypeError, ValueError):
+            return 0.0
+
+    @staticmethod
+    def _header_int(headers, name: str) -> Optional[int]:
+        try:
+            value = headers.get(name)
+            return int(value) if value is not None else None
+        except (TypeError, ValueError):
+            return None
 
 
 def calculate_sha1(path: Path) -> str:
@@ -130,6 +179,10 @@ def _chunks(items: Sequence, size: int):
 
 class BatchExactMatchResolver:
     """按平台文件指纹批量解析项目，避免逐个名称搜索。"""
+
+    def __init__(self):
+        self.modrinth_request_gate = _ApiRateLimitGate(minimum_interval=0.08, dynamic_headers=True)
+        self.curseforge_request_gate = _ApiRateLimitGate(minimum_interval=0.08, dynamic_headers=False)
 
     def resolve(
         self,
@@ -269,6 +322,7 @@ class BatchExactMatchResolver:
                     options.download_source,
                     timeout=20,
                     retry_rounds=2,
+                    request_gate=self.modrinth_request_gate,
                 )
                 versions = (
                     {str(key): value for key, value in version_payload.items() if isinstance(value, dict)}
@@ -284,6 +338,7 @@ class BatchExactMatchResolver:
                         options.download_source,
                         timeout=20,
                         retry_rounds=2,
+                        request_gate=self.modrinth_request_gate,
                     )
                     if isinstance(project_payload, list):
                         projects = {
@@ -295,7 +350,7 @@ class BatchExactMatchResolver:
             except Exception:
                 return batch, {}, {}
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(_EXACT_API_WORKERS, max(1, len(hash_batches)))) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(_MODRINTH_API_WORKERS, max(1, len(hash_batches)))) as executor:
             future_map = {executor.submit(fetch_batch, batch): batch for batch in hash_batches}
             for future in concurrent.futures.as_completed(future_map):
                 batch, versions, projects = future.result()
@@ -350,6 +405,7 @@ class BatchExactMatchResolver:
                     curseforge_source,
                     timeout=25,
                     retry_rounds=2,
+                    request_gate=self.curseforge_request_gate,
                 )
                 data = payload.get("data") if isinstance(payload, dict) else None
                 if isinstance(data, dict) and isinstance(data.get("exactMatches"), list):
@@ -358,7 +414,7 @@ class BatchExactMatchResolver:
                 pass
             return batch, []
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(_EXACT_API_WORKERS, max(1, len(batches)))) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(_CURSEFORGE_API_WORKERS, max(1, len(batches)))) as executor:
             future_map = {executor.submit(fetch_batch, batch): batch for batch in batches}
             for future in concurrent.futures.as_completed(future_map):
                 batch, matches = future.result()
