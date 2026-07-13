@@ -17,6 +17,9 @@ from ..shared import IMPORT_CACHE_DIR_NAME, LoaderType, VersionCandidate
 _ACTIVE_IMPORT_WORKSPACES: set[Path] = set()
 _IMPORT_ATEXIT_REGISTERED = False
 LOCAL_IMPORT_CACHE_DIR_NAME = "_导入缓存"
+IMPORT_WORKSPACE_PREFIX = "session-"
+IMPORT_WORKSPACE_MARKER_NAME = ".auto-mod-classifier-workspace"
+IMPORT_WORKSPACE_MARKER_CONTENT = "auto-mod-classifier import workspace\n"
 MODPACK_DOWNLOAD_RETRY_ROUNDS = 5
 CURSEFORGE_METADATA_RETRY_ROUNDS = 5
 
@@ -26,28 +29,41 @@ def get_import_cache_root() -> Path:
     return Path(tempfile.gettempdir()) / IMPORT_CACHE_DIR_NAME
 
 
+def _is_owned_import_workspace(workspace_root: Path, cache_root: Path) -> bool:
+    """只认可程序在指定缓存根目录中创建并标记过的直接子目录。"""
+    if not workspace_root.name.startswith(IMPORT_WORKSPACE_PREFIX):
+        return False
+    try:
+        if workspace_root.is_symlink() or not workspace_root.is_dir():
+            return False
+        if workspace_root.resolve().parent != cache_root.resolve():
+            return False
+        marker_path = workspace_root / IMPORT_WORKSPACE_MARKER_NAME
+        return marker_path.is_file() and marker_path.read_text(encoding="utf-8") == IMPORT_WORKSPACE_MARKER_CONTENT
+    except (OSError, RuntimeError, UnicodeError):
+        return False
+
+
 def cleanup_import_workspace(workspace_root: Path) -> None:
-    """删除单个导入工作区，并从活动集合里移除。"""
+    """删除已登记且确认由程序创建的单个导入工作区。"""
+    if workspace_root not in _ACTIVE_IMPORT_WORKSPACES:
+        return
     _ACTIVE_IMPORT_WORKSPACES.discard(workspace_root)
+    if not _is_owned_import_workspace(workspace_root, workspace_root.parent):
+        return
     shutil.rmtree(workspace_root, ignore_errors=True)
-    parent = workspace_root.parent
-    if parent.name == LOCAL_IMPORT_CACHE_DIR_NAME:
-        try:
-            if parent.exists() and not any(parent.iterdir()):
-                parent.rmdir()
-        except Exception:
-            pass
 
 
 def cleanup_stale_import_workspaces(cache_root: Optional[Path] = None) -> None:
-    """清理遗留的导入缓存目录，避免上次异常退出后残留垃圾文件。"""
+    """只清理带所有权标记的遗留导入工作区。"""
     target_root = cache_root or get_import_cache_root()
-    if not target_root.exists():
+    if not target_root.exists() or not target_root.is_dir():
         return
     for child in target_root.iterdir():
         if child in _ACTIVE_IMPORT_WORKSPACES:
             continue
-        shutil.rmtree(child, ignore_errors=True)
+        if _is_owned_import_workspace(child, target_root):
+            shutil.rmtree(child, ignore_errors=True)
 
 
 def _cleanup_active_import_workspaces() -> None:
@@ -88,7 +104,15 @@ def _make_import_workspace(source_path: Path, cache_root: Optional[Path] = None)
     target_cache_root = cache_root or get_import_cache_root()
     target_cache_root.mkdir(parents=True, exist_ok=True)
     cleanup_stale_import_workspaces(target_cache_root)
-    workspace_root = Path(tempfile.mkdtemp(prefix="session-", dir=str(target_cache_root)))
+    workspace_root = Path(tempfile.mkdtemp(prefix=IMPORT_WORKSPACE_PREFIX, dir=str(target_cache_root)))
+    try:
+        (workspace_root / IMPORT_WORKSPACE_MARKER_NAME).write_text(
+            IMPORT_WORKSPACE_MARKER_CONTENT,
+            encoding="utf-8",
+        )
+    except Exception:
+        shutil.rmtree(workspace_root, ignore_errors=True)
+        raise
     _register_import_workspace(workspace_root)
     safe_name = source_path.stem or source_path.name or "modpack"
     return {
