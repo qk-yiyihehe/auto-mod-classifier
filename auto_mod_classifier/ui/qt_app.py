@@ -41,10 +41,15 @@ from ..shared import (
     DOWNLOAD_SOURCE_LABELS,
     DOWNLOAD_SOURCE_OPTIONS,
     DOWNLOAD_SOURCE_SMART,
+    JAVA_SELECTION_AUTO,
+    JAVA_SELECTION_CLIENT_ONLY,
+    JAVA_SELECTION_MODE_OPTIONS,
+    JAVA_SELECTION_SYSTEM_FIRST,
     MOD_REPORT_BASENAME,
     ModTaskOptions,
     OFFLINE_DB_FILE_NAME,
     ReviewItem,
+    SERVER_BOOT_TIMEOUT_MODE_OPTIONS,
     SERVER_BOOT_TIMEOUT_SMART,
     ServerTaskOptions,
     TaskStage,
@@ -70,7 +75,17 @@ from .qt_state import HomeWidgets, ModInputWidgets, ReportSectionState, ServerIn
 from .qt_theme import ACCENT_COLOR, build_window_stylesheet, get_app_icon_path, refresh_themed_styles, set_palette
 from .qt_widgets import populate_result_row
 
-SETTINGS_FILE_PATH = Path(__file__).resolve().parents[2] / "auto_mod_classifier_settings.json"
+SETTINGS_FILE_NAME = "auto_mod_classifier_settings.json"
+
+
+def resolve_settings_file_path() -> Path:
+    """源码模式写到项目根目录，onefile 模式写到 exe 所在目录。"""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent / SETTINGS_FILE_NAME
+    return Path(__file__).resolve().parents[2] / SETTINGS_FILE_NAME
+
+
+SETTINGS_FILE_PATH = resolve_settings_file_path()
 DEFAULT_UI_SETTINGS: Dict[str, Any] = {
     "filter_dry_run": False,
     "filter_use_offline_database": False,
@@ -81,11 +96,71 @@ DEFAULT_UI_SETTINGS: Dict[str, Any] = {
     "filter_second_pass": False,
     "server_output_path": "",
     "server_download_source": DOWNLOAD_SOURCE_SMART,
-    "java_rule_index": 0,
+    "java_selection_mode": JAVA_SELECTION_AUTO,
     "auto_download_java": True,
     "server_boot_timeout_mode": SERVER_BOOT_TIMEOUT_SMART,
     "theme_index": 2,
 }
+
+
+_BOOLEAN_SETTING_KEYS = (
+    "filter_dry_run",
+    "filter_use_offline_database",
+    "filter_auto_update_offline_database",
+    "filter_use_mcmod",
+    "filter_use_curseforge_api",
+    "filter_use_curseforge",
+    "filter_second_pass",
+    "auto_download_java",
+)
+_VALID_DOWNLOAD_SOURCES = {code for code, _label in DOWNLOAD_SOURCE_OPTIONS}
+_VALID_BOOT_TIMEOUT_MODES = {code for code, _label in SERVER_BOOT_TIMEOUT_MODE_OPTIONS}
+_VALID_JAVA_SELECTION_MODES = {code for code, _label in JAVA_SELECTION_MODE_OPTIONS}
+_LEGACY_JAVA_SELECTION_MODES = {
+    0: JAVA_SELECTION_AUTO,
+    1: JAVA_SELECTION_SYSTEM_FIRST,
+    2: JAVA_SELECTION_CLIENT_ONLY,
+}
+
+
+def _bounded_index(value: Any, default: int, maximum: int) -> int:
+    if isinstance(value, bool):
+        return default
+    try:
+        index = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(0, min(index, maximum))
+
+
+def normalize_settings_data(raw: Any) -> Dict[str, Any]:
+    """只接收当前设置页支持的类型和值，损坏字段回退默认值。"""
+    data = dict(DEFAULT_UI_SETTINGS)
+    if not isinstance(raw, dict):
+        return data
+
+    for key in _BOOLEAN_SETTING_KEYS:
+        if isinstance(raw.get(key), bool):
+            data[key] = raw[key]
+
+    if isinstance(raw.get("server_output_path"), str):
+        data["server_output_path"] = raw["server_output_path"].strip()
+
+    download_source = raw.get("server_download_source")
+    if isinstance(download_source, str) and download_source in _VALID_DOWNLOAD_SOURCES:
+        data["server_download_source"] = download_source
+
+    boot_timeout_mode = raw.get("server_boot_timeout_mode")
+    if isinstance(boot_timeout_mode, str) and boot_timeout_mode in _VALID_BOOT_TIMEOUT_MODES:
+        data["server_boot_timeout_mode"] = boot_timeout_mode
+
+    java_selection_mode = raw.get("java_selection_mode")
+    if not isinstance(java_selection_mode, str) or java_selection_mode not in _VALID_JAVA_SELECTION_MODES:
+        legacy_index = _bounded_index(raw.get("java_rule_index"), 0, 2)
+        java_selection_mode = _LEGACY_JAVA_SELECTION_MODES[legacy_index]
+    data["java_selection_mode"] = java_selection_mode
+    data["theme_index"] = _bounded_index(raw.get("theme_index"), data["theme_index"], 2)
+    return data
 
 
 def _resolve_windows_system_theme() -> Theme:
@@ -273,23 +348,33 @@ class App(FluentWindow):
         return theme_map.get(index, Theme.AUTO)
 
     def _load_settings_data(self) -> Dict[str, Any]:
-        data = dict(DEFAULT_UI_SETTINGS)
         if not SETTINGS_FILE_PATH.exists():
-            return data
+            return dict(DEFAULT_UI_SETTINGS)
         try:
             raw = json.loads(SETTINGS_FILE_PATH.read_text(encoding="utf-8"))
-        except Exception:
-            return data
-        if not isinstance(raw, dict):
-            return data
-        data.update(raw)
-        return data
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            return dict(DEFAULT_UI_SETTINGS)
+        return normalize_settings_data(raw)
 
     def _save_settings_data(self, data: Dict[str, Any]) -> None:
-        SETTINGS_FILE_PATH.write_text(
-            json.dumps(data, ensure_ascii=False, indent=2),
-            encoding="utf-8",
+        SETTINGS_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        file_descriptor, temp_name = tempfile.mkstemp(
+            prefix=f".{SETTINGS_FILE_PATH.stem}-",
+            suffix=".tmp",
+            dir=str(SETTINGS_FILE_PATH.parent),
         )
+        temp_path = Path(temp_name)
+        try:
+            with os.fdopen(file_descriptor, "w", encoding="utf-8", newline="\n") as handle:
+                json.dump(data, handle, ensure_ascii=False, indent=2)
+                handle.write("\n")
+            os.replace(temp_path, SETTINGS_FILE_PATH)
+        except BaseException:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
 
     def _set_combo_by_data(self, combo: ComboBox, value: str, fallback_index: int = 0) -> None:
         for index in range(combo.count()):
@@ -313,8 +398,10 @@ class App(FluentWindow):
             settings_widgets.server_download_source_combo,
             str(data.get("server_download_source", DOWNLOAD_SOURCE_SMART)),
         )
-        java_rule_index = int(data.get("java_rule_index", 0))
-        settings_widgets.java_rule_combo.setCurrentIndex(max(0, min(java_rule_index, settings_widgets.java_rule_combo.count() - 1)))
+        self._set_combo_by_data(
+            settings_widgets.java_rule_combo,
+            str(data.get("java_selection_mode", JAVA_SELECTION_AUTO)),
+        )
         settings_widgets.auto_download_java_checkbox.setChecked(bool(data.get("auto_download_java", True)))
         self._set_combo_by_data(
             settings_widgets.server_boot_timeout_combo,
@@ -335,7 +422,7 @@ class App(FluentWindow):
             "filter_second_pass": settings_widgets.filter_second_pass_checkbox.isChecked(),
             "server_output_path": settings_widgets.server_output_path_edit.text().strip(),
             "server_download_source": self.resolve_download_source(settings_widgets.server_download_source_combo),
-            "java_rule_index": settings_widgets.java_rule_combo.currentIndex(),
+            "java_selection_mode": str(settings_widgets.java_rule_combo.currentData() or JAVA_SELECTION_AUTO),
             "auto_download_java": settings_widgets.auto_download_java_checkbox.isChecked(),
             "server_boot_timeout_mode": str(
                 settings_widgets.server_boot_timeout_combo.currentData() or SERVER_BOOT_TIMEOUT_SMART
@@ -380,8 +467,13 @@ class App(FluentWindow):
         self._apply_theme_visuals(theme)
 
     def save_settings(self) -> None:
-        self._settings_data = self._collect_settings_data()
-        self._save_settings_data(self._settings_data)
+        settings_data = self._collect_settings_data()
+        try:
+            self._save_settings_data(settings_data)
+        except OSError as exc:
+            self.show_error(f"设置保存失败：{exc}")
+            return
+        self._settings_data = settings_data
         self._theme_mode = self._theme_from_index(int(self._settings_data.get("theme_index", 0)))
         self._apply_theme_visuals(self._theme_mode)
         InfoBar.success(
@@ -393,11 +485,16 @@ class App(FluentWindow):
         )
 
     def reset_settings(self) -> None:
-        self._settings_data = dict(DEFAULT_UI_SETTINGS)
+        settings_data = dict(DEFAULT_UI_SETTINGS)
+        try:
+            self._save_settings_data(settings_data)
+        except OSError as exc:
+            self.show_error(f"设置重置失败：{exc}")
+            return
+        self._settings_data = settings_data
         self._apply_settings_to_widgets()
         self._theme_mode = self._theme_from_index(int(self._settings_data.get("theme_index", 0)))
         self._apply_theme_visuals(self._theme_mode)
-        self._save_settings_data(self._settings_data)
         InfoBar.success(
             "设置已重置",
             "设置已恢复默认值，并已立即保存。",
@@ -592,6 +689,7 @@ class App(FluentWindow):
             use_curseforge=settings_widgets.filter_use_cf_checkbox.isChecked(),
             enable_second_pass=settings_widgets.filter_second_pass_checkbox.isChecked(),
             auto_download_java=settings_widgets.auto_download_java_checkbox.isChecked(),
+            java_selection_mode=str(settings_widgets.java_rule_combo.currentData() or JAVA_SELECTION_AUTO),
             boot_timeout_mode=str(
                 settings_widgets.server_boot_timeout_combo.currentData() or SERVER_BOOT_TIMEOUT_SMART
             ),
@@ -1312,11 +1410,10 @@ def main() -> None:
     if SETTINGS_FILE_PATH.exists():
         try:
             raw = json.loads(SETTINGS_FILE_PATH.read_text(encoding="utf-8"))
-            if isinstance(raw, dict):
-                startup_settings.update(raw)
-        except Exception:
+            startup_settings = normalize_settings_data(raw)
+        except (OSError, UnicodeError, json.JSONDecodeError):
             pass
-    theme_index = int(startup_settings.get("theme_index", DEFAULT_UI_SETTINGS["theme_index"]))
+    theme_index = startup_settings["theme_index"]
     startup_theme = resolve_effective_theme(
         {0: Theme.DARK, 1: Theme.LIGHT, 2: Theme.AUTO}.get(theme_index, Theme.DARK),
         app,

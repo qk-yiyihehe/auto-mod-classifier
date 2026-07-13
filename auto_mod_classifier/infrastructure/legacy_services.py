@@ -239,6 +239,7 @@ class LegacyServerBuildService:
                 enable_second_pass=request.enable_second_pass,
                 auto_download_java=request.auto_download_java,
                 boot_timeout_mode=request.boot_timeout_mode,
+                java_selection_mode=request.java_selection_mode,
                 prepared_version_candidates=source.version_candidates,
             )
             result = builder.build_server(source.client_dir, request.output_dir)

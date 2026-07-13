@@ -24,6 +24,7 @@ class ServerBuilderRuntime:
     enable_second_pass: bool
     auto_download_java: bool
     boot_timeout_mode: str
+    java_selection_mode: str
     prepared_version_candidates: List[VersionCandidate] = field(default_factory=list)
     # 下面这些是多个服务会共用的运行期状态，所以集中放在这里。
     network_cache: Dict[str, Any] = field(default_factory=dict)

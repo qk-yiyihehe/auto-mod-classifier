@@ -37,6 +37,7 @@ def _build_server_request(options: ServerTaskOptions) -> BuildServerRequest:
         enable_second_pass=options.enable_second_pass,
         auto_download_java=options.auto_download_java,
         boot_timeout_mode=options.boot_timeout_mode,
+        java_selection_mode=options.java_selection_mode,
     )
 
 

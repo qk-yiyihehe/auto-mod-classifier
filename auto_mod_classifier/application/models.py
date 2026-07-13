@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
-from ..shared import SERVER_BOOT_TIMEOUT_SMART
+from ..shared import JAVA_SELECTION_AUTO, SERVER_BOOT_TIMEOUT_SMART
 
 
 TaskEmitter = Callable[[str, Any], None]
@@ -45,6 +45,7 @@ class BuildServerRequest:
     enable_second_pass: bool = False
     auto_download_java: bool = True
     boot_timeout_mode: str = SERVER_BOOT_TIMEOUT_SMART
+    java_selection_mode: str = JAVA_SELECTION_AUTO
 
 
 @dataclass

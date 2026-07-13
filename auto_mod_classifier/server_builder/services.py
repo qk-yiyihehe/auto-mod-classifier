@@ -943,6 +943,27 @@ class ServerJavaService:
     def java_requires_64bit(self, required_major: int) -> bool:
         return required_major >= 21
 
+    def _apply_java_selection_mode(self, candidates: List[Tuple[Path, str]]) -> List[Tuple[Path, str]]:
+        mode = self.common.runtime.java_selection_mode
+
+        def is_client_runtime(item: Tuple[Path, str]) -> bool:
+            source = item[1]
+            return source.startswith(
+                (
+                    "实例相关目录/",
+                    "默认 .minecraft/runtime",
+                    "PCL 配置",
+                    "PCL 临时目录",
+                    "用户常见目录/PCL",
+                )
+            )
+
+        if mode == JAVA_SELECTION_CLIENT_ONLY:
+            return [item for item in candidates if is_client_runtime(item)]
+        if mode == JAVA_SELECTION_SYSTEM_FIRST:
+            return sorted(candidates, key=is_client_runtime)
+        return candidates
+
     def collect_candidate_java_paths(self, client_dir: Path, game_root: Path) -> List[Tuple[Path, str]]:
         candidates: List[Tuple[Path, str]] = []
         seen: set[str] = set()
@@ -1108,7 +1129,7 @@ class ServerJavaService:
             add_java_paths_from_records(root, f"用户常见目录/{root.name}")
 
         add_drive_hint_roots(app_dir.resolve(), client_dir.resolve(), game_root.resolve(), user_home)
-        return candidates
+        return self._apply_java_selection_mode(candidates)
 
     def inspect_java_runtime(self, java_path: Path, source: str) -> Optional[JavaRuntime]:
         try:
@@ -1151,6 +1172,11 @@ class ServerJavaService:
     def ensure_java(self, client_dir: Path, game_root: Path, candidate: VersionCandidate, output_root: Path) -> JavaRuntime:
         required_major = self.get_required_java_major(candidate)
         require_64bit = self.java_requires_64bit(required_major)
+
+        if self.common.runtime.java_selection_mode == JAVA_SELECTION_CLIENT_ONLY:
+            self.common.log_line("Java 查找范围：只检查客户端实例相关目录；自动下载策略单独生效。")
+        elif self.common.runtime.java_selection_mode == JAVA_SELECTION_SYSTEM_FIRST:
+            self.common.log_line("Java 查找顺序：优先检查本机 Java，再检查客户端实例相关目录。")
 
         runtimes: List[JavaRuntime] = []
         for java_path, source in self.collect_candidate_java_paths(client_dir, game_root):

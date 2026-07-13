@@ -74,6 +74,14 @@ SERVER_BOOT_TIMEOUT_MODE_OPTIONS = [
     (SERVER_BOOT_TIMEOUT_SMART, "智能等待"),
     (SERVER_BOOT_TIMEOUT_STRICT, "固定 90 秒"),
 ]
+JAVA_SELECTION_AUTO = "auto"
+JAVA_SELECTION_SYSTEM_FIRST = "system-first"
+JAVA_SELECTION_CLIENT_ONLY = "client-only"
+JAVA_SELECTION_MODE_OPTIONS = [
+    (JAVA_SELECTION_AUTO, "自动匹配"),
+    (JAVA_SELECTION_SYSTEM_FIRST, "优先使用本机 Java"),
+    (JAVA_SELECTION_CLIENT_ONLY, "只使用客户端自带 Java"),
+]
 DEFAULT_SERVER_TIMEOUT_SECONDS = 90
 DEFAULT_SERVER_INIT_MAX_TIMEOUT_SECONDS = 240
 DEFAULT_SERVER_VERIFY_MAX_TIMEOUT_SECONDS = 480
@@ -346,6 +354,7 @@ class ServerTaskOptions:
     enable_second_pass: bool
     auto_download_java: bool = True
     boot_timeout_mode: str = SERVER_BOOT_TIMEOUT_SMART
+    java_selection_mode: str = JAVA_SELECTION_AUTO
 
 
 def get_classification_worker_count(total: int) -> int:

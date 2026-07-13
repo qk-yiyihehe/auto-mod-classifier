@@ -26,7 +26,12 @@ from qfluentwidgets import (
 )
 
 from ..download_support import build_idle_download_status_text
-from ..shared import DOWNLOAD_SOURCE_OPTIONS, DOWNLOAD_SOURCE_SMART, SERVER_BOOT_TIMEOUT_MODE_OPTIONS
+from ..shared import (
+    DOWNLOAD_SOURCE_OPTIONS,
+    DOWNLOAD_SOURCE_SMART,
+    JAVA_SELECTION_MODE_OPTIONS,
+    SERVER_BOOT_TIMEOUT_MODE_OPTIONS,
+)
 from .qt_state import (
     HomeWidgets,
     ModInputWidgets,
@@ -1002,11 +1007,16 @@ class QtPageFactory:
         sv_dl = self._build_download_source_combo()
         self._add_control_row(s_l, "下载源", sv_dl, "模组筛选和一键开服共用这一项下载源设置。")
         jv_rule = ComboBox(s_card)
-        for t in ("自动匹配", "优先使用本机 Java", "只使用客户端自带 Java"):
-            jv_rule.addItem(t)
+        for code, label in JAVA_SELECTION_MODE_OPTIONS:
+            jv_rule.addItem(label, userData=code)
         apply_input_style(jv_rule)
         jv_rule.setMaxVisibleItems(3)
-        self._add_control_row(s_l, "Java 选择", jv_rule)
+        self._add_control_row(
+            s_l,
+            "Java 选择",
+            jv_rule,
+            "限制已有 Java 的查找顺序或范围；自动下载仍由下方选项决定。",
+        )
         auto_java_cb = CheckBox("找不到合适版本时，自动下载 Java 到输出目录", s_card)
         auto_java_cb.setChecked(True)
         s_l.addWidget(auto_java_cb)
