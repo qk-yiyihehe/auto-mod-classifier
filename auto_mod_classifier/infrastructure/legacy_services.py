@@ -64,6 +64,22 @@ class LegacyModScanService:
             def first_pass_result(completed: int, total: int, jar: Path, row: Dict[str, Any]) -> None:
                 emit("log", f"[{completed}/{total}] {jar.name} -> {row['Category']} | {row['Reason']}")
 
+            exact_stage_labels = {
+                "sha1": "正在计算文件 SHA1",
+                "modrinth": "正在批量查询 Modrinth",
+                "curseforge": "正在计算 CurseForge 指纹",
+            }
+
+            def exact_match_progress(stage: str, completed: int, total: int, jar: Optional[Path]) -> None:
+                label = exact_stage_labels.get(stage, "正在进行平台精确匹配")
+                detail = f"{label}：{completed}/{total}"
+                if jar is not None:
+                    detail += f" {jar.name}"
+                emit("stage", {"stage_key": "exact-match", "detail": detail})
+                emit("status", detail)
+                if completed == 0 or completed == total or completed % 25 == 0:
+                    emit("log", detail)
+
             results = classify_jars_parallel(
                 classifier,
                 jar_files,
@@ -74,6 +90,7 @@ class LegacyModScanService:
                 request.download_source,
                 progress_callback=first_pass_progress,
                 result_callback=first_pass_result,
+                exact_match_progress_callback=exact_match_progress,
             )
 
             unknown_rows = [row for row in results if row["Category"] == "unknown"]
@@ -105,6 +122,7 @@ class LegacyModScanService:
                         request.download_source,
                         progress_callback=second_pass_progress,
                         result_callback=second_pass_result,
+                        exact_match_progress_callback=exact_match_progress,
                     )
                     remaining_unknown = sum(1 for row in results if row["Category"] == "unknown")
                     emit("log", f"2次筛选完成：回补 {recovered} 个，仍待确认 {remaining_unknown} 个")

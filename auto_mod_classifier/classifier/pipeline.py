@@ -23,6 +23,7 @@ class ClassificationPipeline:
         options: ClassificationOptions,
         progress_callback: Optional[Callable[[int, int, Path], None]] = None,
         result_callback: Optional[Callable[[int, int, Path, Dict[str, Any]], None]] = None,
+        exact_match_progress_callback: Optional[Callable[[str, int, int, Optional[Path]], None]] = None,
     ) -> List[Dict[str, Any]]:
         # 这层不关心某个站点怎么查，只关心“先本地，再按策略串联远程来源”。
         total = len(jar_files)
@@ -130,17 +131,32 @@ class ClassificationPipeline:
                     local_executor.submit(run_local, index, jar)
 
             exact_outcomes = {}
+            finished_exact_paths: set[str] = set()
             resolver = getattr(self.strategy, "exact_match_resolver", None)
             if resolver is not None and pending_remote:
+                pending_by_path = {str(jar): (index, jar, meta) for index, jar, meta, _local in pending_remote}
+
+                def finish_exact_match(path: Path, outcome) -> None:
+                    pending_item = pending_by_path.get(str(path))
+                    if pending_item is None or outcome.classification is None:
+                        return
+                    index, jar, meta = pending_item
+                    finished_exact_paths.add(str(path))
+                    finish_classification(index, jar, meta, outcome.classification)
+
                 try:
                     exact_outcomes = resolver.resolve(
                         [(jar, meta) for _index, jar, meta, _local in pending_remote],
                         options,
+                        progress_callback=exact_match_progress_callback,
+                        result_callback=finish_exact_match,
                     )
                 except Exception:
                     exact_outcomes = {}
 
             for index, jar, meta, local in pending_remote:
+                if str(jar) in finished_exact_paths:
+                    continue
                 outcome = exact_outcomes.get(str(jar))
                 if outcome is not None and outcome.classification is not None:
                     finish_classification(index, jar, meta, outcome.classification)
@@ -158,6 +174,7 @@ class ClassificationPipeline:
         options: ClassificationOptions,
         progress_callback: Optional[Callable[[int, int, Path], None]] = None,
         result_callback: Optional[Callable[[int, int, Path, Dict[str, Any]], None]] = None,
+        exact_match_progress_callback: Optional[Callable[[str, int, int, Optional[Path]], None]] = None,
     ) -> int:
         unknown_rows = [
             row
@@ -178,6 +195,7 @@ class ClassificationPipeline:
             options,
             progress_callback=progress_callback,
             result_callback=result_callback,
+            exact_match_progress_callback=exact_match_progress_callback,
         )
         retry_map = {str(row["Path"]): row for row in retry_results}
         recovered = 0
@@ -246,6 +264,7 @@ def classify_jars_parallel(
     download_source: str = DOWNLOAD_SOURCE_SMART,
     progress_callback: Optional[Callable[[int, int, Path], None]] = None,
     result_callback: Optional[Callable[[int, int, Path, Dict[str, Any]], None]] = None,
+    exact_match_progress_callback: Optional[Callable[[str, int, int, Optional[Path]], None]] = None,
 ) -> List[Dict[str, Any]]:
     classifier.download_source = download_source
     classifier.use_curseforge_api = use_curseforge_api
@@ -261,6 +280,7 @@ def classify_jars_parallel(
         ),
         progress_callback=progress_callback,
         result_callback=result_callback,
+        exact_match_progress_callback=exact_match_progress_callback,
     )
 
 
@@ -273,6 +293,7 @@ def rerun_unknown_classifications(
     download_source: str = DOWNLOAD_SOURCE_SMART,
     progress_callback: Optional[Callable[[int, int, Path], None]] = None,
     result_callback: Optional[Callable[[int, int, Path, Dict[str, Any]], None]] = None,
+    exact_match_progress_callback: Optional[Callable[[str, int, int, Optional[Path]], None]] = None,
 ) -> int:
     pipeline = ClassificationPipeline(ClassifierCore(download_source=download_source))
     return pipeline.rerun_unknown_classifications(
@@ -286,4 +307,5 @@ def rerun_unknown_classifications(
         ),
         progress_callback=progress_callback,
         result_callback=result_callback,
+        exact_match_progress_callback=exact_match_progress_callback,
     )

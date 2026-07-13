@@ -1871,6 +1871,21 @@ class ServerInstallService:
         def first_pass_result(completed: int, inner_total: int, jar: Path, row: Dict[str, Any]) -> None:
             self.common.log_line(f"[模组 {completed}/{inner_total}] {jar.name} -> {get_category_label(row['Category'])} | {row['Reason']}")
 
+        exact_stage_labels = {
+            "sha1": "正在计算文件 SHA1",
+            "modrinth": "正在批量查询 Modrinth",
+            "curseforge": "正在计算 CurseForge 指纹",
+        }
+
+        def exact_match_progress(stage: str, completed: int, inner_total: int, jar: Optional[Path]) -> None:
+            label = exact_stage_labels.get(stage, "正在进行平台精确匹配")
+            detail = f"{label}：{completed}/{inner_total}"
+            if jar is not None:
+                detail += f" {jar.name}"
+            self.runtime.set_status(f"{TaskStage.CLASSIFY_MODS.value}：{detail}")
+            if completed == 0 or completed == inner_total or completed % 25 == 0:
+                self.common.log_line(detail + "。")
+
         results = classify_jars_parallel(
             classifier=self.runtime.classifier,
             jar_files=jar_files,
@@ -1881,6 +1896,7 @@ class ServerInstallService:
             download_source=self.runtime.download_source,
             progress_callback=first_pass_progress,
             result_callback=first_pass_result,
+            exact_match_progress_callback=exact_match_progress,
         )
 
         unknown_rows = [row for row in results if row["Category"] == "unknown"]
@@ -1910,6 +1926,7 @@ class ServerInstallService:
                     download_source=self.runtime.download_source,
                     progress_callback=second_pass_progress,
                     result_callback=second_pass_result,
+                    exact_match_progress_callback=exact_match_progress,
                 )
                 remaining_unknown = sum(1 for row in results if row["Category"] == "unknown")
                 self.common.log_line(f"2次筛选完成：回补 {recovered} 个，仍待人工确认 {remaining_unknown} 个。")
