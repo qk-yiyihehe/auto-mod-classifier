@@ -65,6 +65,14 @@ class InstallerDependency:
     sha1: str
 
 
+def _maven_artifact_path(coordinate: str) -> Path:
+    parts = str(coordinate or "").split(":")
+    if len(parts) != 3 or not all(parts):
+        raise RuntimeError(f"无法解析 Maven 坐标：{coordinate}")
+    group, artifact, version = parts
+    return Path(*group.split(".")) / artifact / version / f"{artifact}-{version}.jar"
+
+
 def _normalize_failure_text(text: str) -> str:
     return str(text or "").strip()
 
@@ -898,6 +906,7 @@ class ServerJavaService:
                 reporter=reporter,
                 display_name=package["name"],
                 log_callback=self.common.log_line,
+                minimum_speed_bytes=192 * 1024,
             )
         finally:
             reporter.close()
@@ -1613,14 +1622,94 @@ class ServerInstallService:
         if failures:
             self.common.log_line(
                 f"安装器依赖已提前完成 {len(pending) - len(failures)}/{len(pending)} 个；"
-                f"其余 {len(failures)} 个交由安装器继续下载。"
+                f"其余 {len(failures)} 个下载失败，已停止启动安装器。"
             )
             for dependency, exc in failures[:3]:
                 self.common.log_line(f"提前下载失败：{dependency.relative_path} | {exc}")
             return False
-        else:
-            self.common.log_line(f"安装器依赖提前下载完成：{len(pending)}/{len(pending)} 个。")
+        self.common.log_line(f"安装器依赖提前下载完成：{len(pending)}/{len(pending)} 个。")
+        return True
+
+    def prepare_fabric_dependencies(self, output_root: Path, candidate: VersionCandidate) -> bool:
+        if candidate.loader != LoaderType.FABRIC.value:
             return True
+        profile_url = (
+            "https://meta.fabricmc.net/v2/versions/loader/"
+            f"{candidate.minecraft_version}/{candidate.loader_version}/server/json"
+        )
+        try:
+            profile = self.common.http_get_json(profile_url)
+            libraries = profile.get("libraries") if isinstance(profile, dict) else None
+            if not isinstance(libraries, list) or not libraries:
+                raise RuntimeError("Fabric Server Profile 未返回依赖列表。")
+        except Exception as exc:
+            self.common.log_line(f"无法解析 Fabric Loader 依赖：{exc}")
+            return False
+
+        dependencies: List[Tuple[InstallerDependency, Path]] = []
+        library_root = (output_root / "libraries").resolve()
+        for library in libraries:
+            if not isinstance(library, dict):
+                continue
+            coordinate = str(library.get("name") or "").strip()
+            base_url = str(library.get("url") or "").strip().rstrip("/") + "/"
+            if not coordinate or not base_url.strip("/"):
+                continue
+            try:
+                relative_path = _maven_artifact_path(coordinate)
+            except RuntimeError as exc:
+                self.common.log_line(str(exc))
+                return False
+            target_path = (library_root / relative_path).resolve()
+            dependency = InstallerDependency(
+                url=base_url + relative_path.as_posix(),
+                relative_path=relative_path,
+                sha1=str(library.get("sha1") or "").strip().lower(),
+            )
+            if self._is_dependency_ready(target_path, dependency.sha1):
+                continue
+            dependencies.append((dependency, target_path))
+
+        if not dependencies:
+            self.common.log_line(f"Fabric Loader 依赖已全部就绪：{len(libraries)} 个文件。")
+            return True
+
+        worker_count = choose_download_worker_count(len(dependencies))
+        reporter = DownloadStatsReporter(self.runtime.set_download_status, len(dependencies), worker_count)
+
+        def download_dependency(item: Tuple[InstallerDependency, Path]) -> None:
+            dependency, target_path = item
+            self.common.http_download(
+                dependency.url,
+                target_path,
+                reporter=reporter,
+                display_name=dependency.relative_path.name,
+                log_callback=self.common.log_line,
+                timeout=10,
+                retry_rounds=1,
+            )
+            if dependency.sha1 and self._calculate_sha1(target_path) != dependency.sha1:
+                target_path.unlink(missing_ok=True)
+                raise RuntimeError(f"SHA1 校验失败：{dependency.relative_path}")
+
+        failures: List[Tuple[InstallerDependency, Exception]] = []
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
+                future_map = {executor.submit(download_dependency, item): item[0] for item in dependencies}
+                for future in concurrent.futures.as_completed(future_map):
+                    try:
+                        future.result()
+                    except Exception as exc:
+                        failures.append((future_map[future], exc))
+        finally:
+            reporter.close()
+
+        if failures:
+            for dependency, exc in failures[:3]:
+                self.common.log_line(f"Fabric 依赖下载失败：{dependency.relative_path} | {exc}")
+            return False
+        self.common.log_line(f"Fabric Loader 依赖提前下载完成：{len(dependencies)}/{len(dependencies)} 个。")
+        return True
 
     def _read_json_file(self, path: Path) -> Optional[Dict[str, Any]]:
         if not path.is_file():
@@ -1812,6 +1901,7 @@ class ServerInstallService:
     def install_server(self, output_root: Path, candidate: VersionCandidate, installer_path: Path, java_runtime: JavaRuntime) -> None:
         prepared_server_jar = self.prepare_vanilla_server_jar(output_root, candidate)
         dependencies_ready = self.prepare_installer_dependencies(output_root, candidate, installer_path)
+        fabric_dependencies_ready = self.prepare_fabric_dependencies(output_root, candidate)
         if candidate.loader in {LoaderType.FORGE.value, LoaderType.NEOFORGE.value} and (
             not prepared_server_jar or not dependencies_ready
         ):
@@ -1822,6 +1912,11 @@ class ServerInstallService:
                 missing_parts.append(f"{candidate.loader.title()} 安装器依赖")
             raise RuntimeError(
                 f"{'、'.join(missing_parts)}未能全部下载，已停止启动安装器，避免内部下载长时间无响应。"
+                "请切换下载源后重试；已经下载成功的文件会保留并自动复用。"
+            )
+        if candidate.loader == LoaderType.FABRIC.value and (not prepared_server_jar or not fabric_dependencies_ready):
+            raise RuntimeError(
+                "Fabric 原版服务端核心或 Loader 依赖未能全部下载，已停止启动安装器，避免内部联网长时间无响应。"
                 "请切换下载源后重试；已经下载成功的文件会保留并自动复用。"
             )
         if candidate.loader == LoaderType.FABRIC.value:

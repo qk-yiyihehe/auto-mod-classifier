@@ -564,6 +564,7 @@ class MrpackSourceImporter:
                     log_callback=lambda message: _emit(emit, "log", message),
                     log_success=False,
                     retry_rounds=MODPACK_DOWNLOAD_RETRY_ROUNDS,
+                    minimum_speed_bytes=128 * 1024,
                 )
                 _verify_download_hash(temp_download, item.get("hashes") or {})
                 shutil.move(str(temp_download), str(target_path))
@@ -750,6 +751,7 @@ class ZipModpackSourceImporter:
                         log_callback=lambda message: _emit(emit, "log", message),
                         log_success=False,
                         retry_rounds=MODPACK_DOWNLOAD_RETRY_ROUNDS,
+                        minimum_speed_bytes=128 * 1024,
                     )
                     _emit(emit, "log", f"[下载成功] {file_name}")
                 except Exception as exc:

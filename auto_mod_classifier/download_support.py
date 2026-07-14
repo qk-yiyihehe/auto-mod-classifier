@@ -319,10 +319,21 @@ def _sort_attempts(attempts: list[DownloadAttempt]) -> list[DownloadAttempt]:
 def _build_attempt_sort_key(attempt: DownloadAttempt) -> tuple[float, float, float, int]:
     cached_score = _get_cached_attempt_score(attempt)
     route_rank = _route_rank_for_source(attempt.source_code).get(attempt.route_code, 99)
+    if _detect_proxy_mode() != _PROXY_MODE_NONE:
+        if attempt.source_code == DOWNLOAD_SOURCE_OFFICIAL and attempt.route_code == "system":
+            uncached_rank = 0.0
+        elif attempt.source_code != DOWNLOAD_SOURCE_OFFICIAL and attempt.route_code == "direct":
+            uncached_rank = 1.0
+        elif attempt.source_code == DOWNLOAD_SOURCE_OFFICIAL and attempt.route_code == "direct":
+            uncached_rank = 2.0
+        else:
+            uncached_rank = 3.0
+    else:
+        uncached_rank = float(attempt.source_rank)
     if cached_score is None:
-        return (1.0, float(attempt.source_rank), route_rank, 0.0)
+        return (1.0, uncached_rank, route_rank, 0.0)
     if math.isinf(cached_score):
-        return (2.0, float(attempt.source_rank), route_rank, 0.0)
+        return (2.0, uncached_rank, route_rank, 0.0)
     return (0.0, cached_score, float(attempt.source_rank), float(route_rank))
 
 
