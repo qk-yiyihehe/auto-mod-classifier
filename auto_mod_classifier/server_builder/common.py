@@ -76,6 +76,7 @@ class ServerBuilderCommonService:
         *,
         timeout: int = 15,
         retry_rounds: int = 2,
+        minimum_speed_bytes: int = 0,
     ) -> None:
         http_download(
             url,
@@ -87,6 +88,7 @@ class ServerBuilderCommonService:
             log_callback=log_callback,
             retry_rounds=retry_rounds,
             cancel_check=self.runtime.raise_if_cancelled,
+            minimum_speed_bytes=minimum_speed_bytes,
         )
 
     def get_application_dir(self) -> Path:

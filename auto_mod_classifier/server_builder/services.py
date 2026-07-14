@@ -1489,6 +1489,7 @@ class ServerInstallService:
                 reporter=reporter,
                 log_callback=self.common.log_line,
                 display_name=spec.file_name,
+                minimum_speed_bytes=192 * 1024,
             )
         finally:
             reporter.close()
@@ -1790,6 +1791,7 @@ class ServerInstallService:
                 reporter=reporter,
                 log_callback=self.common.log_line,
                 display_name=f"minecraft-server-{candidate.minecraft_version}.jar",
+                minimum_speed_bytes=192 * 1024,
             )
         except Exception as exc:
             self.common.log_line(f"提前下载原版服务端失败，本次回退为安装器自行下载：{exc}")

@@ -33,6 +33,8 @@ _ATTEMPT_SUCCESS_CACHE_TTL_SECONDS = 300.0
 _ATTEMPT_FAILURE_CACHE_TTL_SECONDS = 45.0
 _RETRY_BASE_DELAY_SECONDS = 0.8
 _RETRY_MAX_DELAY_SECONDS = 2.5
+_SLOW_DOWNLOAD_SAMPLE_SECONDS = 8.0
+_SLOW_DOWNLOAD_MIN_BYTES = 512 * 1024
 _SMART_RESOURCE_MOD_PLATFORM = "mod-platform"
 _SMART_RESOURCE_SERVER_DEPENDENCY = "server-dependency"
 _SMART_RESOURCE_GENERIC = "generic"
@@ -76,6 +78,10 @@ class DownloadAttempt:
     @property
     def display_label(self) -> str:
         return f"{self.source_label} / {self.route_label}"
+
+
+class _SlowDownloadError(RuntimeError):
+    pass
 
 
 def format_bytes(size: float) -> str:
@@ -617,6 +623,7 @@ def http_download(
     log_success: bool = True,
     retry_rounds: int = DEFAULT_REQUEST_RETRY_ROUNDS,
     cancel_check: Optional[Callable[[], None]] = None,
+    minimum_speed_bytes: int = 0,
 ) -> None:
     """下载单个文件，支持镜像回退、直连/代理双路线、进度统计和原子替换。"""
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -646,7 +653,7 @@ def http_download(
                 try:
                     req = urllib.request.Request(attempt.url, headers={"User-Agent": USER_AGENT})
                     started_at = time.monotonic()
-                    first_chunk_at: Optional[float] = None
+                    downloaded_this_attempt = 0
                     with _open_request(req, attempt.route_code, timeout=timeout) as resp:
                         with temp_path.open("wb") as fp:
                             while True:
@@ -655,13 +662,24 @@ def http_download(
                                 chunk = resp.read(_DOWNLOAD_CHUNK_SIZE)
                                 if not chunk:
                                     break
-                                if first_chunk_at is None:
-                                    first_chunk_at = time.monotonic()
                                 fp.write(chunk)
+                                downloaded_this_attempt += len(chunk)
                                 if reporter is not None:
                                     reporter.add_bytes(len(chunk))
-                    first_response_seconds = (first_chunk_at or time.monotonic()) - started_at
-                    _record_attempt_score(attempt, first_response_seconds)
+                                elapsed = time.monotonic() - started_at
+                                has_fallback = index < len(attempts)
+                                if (
+                                    minimum_speed_bytes > 0
+                                    and has_fallback
+                                    and elapsed >= _SLOW_DOWNLOAD_SAMPLE_SECONDS
+                                    and downloaded_this_attempt >= _SLOW_DOWNLOAD_MIN_BYTES
+                                    and downloaded_this_attempt / elapsed < minimum_speed_bytes
+                                ):
+                                    speed_text = format_bytes(downloaded_this_attempt / elapsed)
+                                    raise _SlowDownloadError(f"持续速度仅 {speed_text}/s")
+                    elapsed = max(time.monotonic() - started_at, 0.001)
+                    throughput_score = elapsed / max(downloaded_this_attempt, 1) * 1024 * 1024
+                    _record_attempt_score(attempt, throughput_score)
                     temp_path.replace(destination)
                     if log_callback is not None and log_success:
                         log_callback(f"[下载成功] {file_label} | {attempt.display_label}")
