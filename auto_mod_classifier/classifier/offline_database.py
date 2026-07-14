@@ -41,7 +41,7 @@ class OfflineModDatabase:
     """Voxelum 离线库查询器。"""
 
     RELEASE_API_URL = "https://api.github.com/repos/Voxelum/minecraft-mods-database/releases/latest"
-    USER_AGENT = "AutoModClassifier/3.01"
+    USER_AGENT = "AutoModClassifier/3.03"
 
     def __init__(self, db_path: Optional[Path] = None):
         self.db_path = Path(db_path) if db_path else get_optional_offline_db_path()

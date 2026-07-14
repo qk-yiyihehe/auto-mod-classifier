@@ -828,7 +828,7 @@ class ServerVersionService:
         if candidate.loader == LoaderType.NEOFORGE.value:
             return self.resolve_neoforge_installer(candidate)
         if candidate.loader == LoaderType.QUILT.value:
-            raise RuntimeError("3.01 的一键制作服务端模式暂不支持 Quilt。")
+            raise RuntimeError("3.03 的一键制作服务端模式暂不支持 Quilt。")
         raise RuntimeError(f"暂不支持自动制作 {candidate.loader} 服务端。")
 
 
@@ -1978,7 +1978,7 @@ class ServerLaunchService:
 
     def write_user_jvm_args(self, output_root: Path, xms: str, xmx: str) -> None:
         (output_root / "user_jvm_args.txt").write_text(
-            "\n".join(["# 自动筛选模组分类器 3.01 生成", f"-Xms{xms}", f"-Xmx{xmx}"]) + "\n",
+            "\n".join(["# 自动筛选模组分类器 3.03 生成", f"-Xms{xms}", f"-Xmx{xmx}"]) + "\n",
             encoding="utf-8",
         )
 
@@ -2387,7 +2387,7 @@ class ServerWorkflowService:
             chosen = self.versioning.choose_version_candidate(candidates)
             self.common.log_line(f"目标版本：{chosen.display_name} | 版本清单 Java {chosen.java_major}")
             if chosen.loader == LoaderType.QUILT.value:
-                raise RuntimeError("检测到 Quilt 客户端，3.01 的一键制作服务端模式暂不支持 Quilt。")
+                raise RuntimeError("检测到 Quilt 客户端，3.03 的一键制作服务端模式暂不支持 Quilt。")
 
             fabric_resolution = self.mods.resolve_fabric_mods(game_root / "mods", chosen)
             for note in fabric_resolution.notes:
