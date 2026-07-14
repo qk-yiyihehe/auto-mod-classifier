@@ -181,7 +181,7 @@ class BatchExactMatchResolver:
     """按平台文件指纹批量解析项目，避免逐个名称搜索。"""
 
     def __init__(self):
-        self.modrinth_request_gate = _ApiRateLimitGate(minimum_interval=0.08, dynamic_headers=True)
+        self.modrinth_request_gate = _ApiRateLimitGate(minimum_interval=0.22, dynamic_headers=True)
         self.curseforge_request_gate = _ApiRateLimitGate(minimum_interval=0.08, dynamic_headers=False)
 
     def resolve(
