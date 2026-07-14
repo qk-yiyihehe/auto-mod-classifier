@@ -1537,17 +1537,17 @@ class ServerInstallService:
         output_root: Path,
         candidate: VersionCandidate,
         installer_path: Path,
-    ) -> None:
+    ) -> bool:
         if candidate.loader not in {LoaderType.FORGE.value, LoaderType.NEOFORGE.value}:
-            return
+            return True
 
         try:
             dependencies = self._read_installer_dependencies(installer_path)
         except Exception as exc:
             self.common.log_line(f"无法提前解析安装器依赖，本次交由安装器自行下载：{exc}")
-            return
+            return False
         if not dependencies:
-            return
+            return True
 
         library_root = (output_root / "libraries").resolve()
         pending: List[Tuple[InstallerDependency, Path]] = []
@@ -1569,7 +1569,7 @@ class ServerInstallService:
 
         if not pending:
             self.common.log_line(f"安装器依赖已全部就绪：复用 {reused_count}/{len(dependencies)} 个文件。")
-            return
+            return True
 
         worker_count = choose_download_worker_count(len(pending))
         self.common.log_line(
@@ -1585,6 +1585,9 @@ class ServerInstallService:
                 target_path,
                 reporter=reporter,
                 display_name=dependency.relative_path.name,
+                log_callback=self.common.log_line,
+                timeout=10,
+                retry_rounds=1,
             )
             if dependency.sha1 and self._calculate_sha1(target_path) != dependency.sha1:
                 try:
@@ -1613,8 +1616,10 @@ class ServerInstallService:
             )
             for dependency, exc in failures[:3]:
                 self.common.log_line(f"提前下载失败：{dependency.relative_path} | {exc}")
+            return False
         else:
             self.common.log_line(f"安装器依赖提前下载完成：{len(pending)}/{len(pending)} 个。")
+            return True
 
     def _read_json_file(self, path: Path) -> Optional[Dict[str, Any]]:
         if not path.is_file():
@@ -1804,7 +1809,19 @@ class ServerInstallService:
 
     def install_server(self, output_root: Path, candidate: VersionCandidate, installer_path: Path, java_runtime: JavaRuntime) -> None:
         prepared_server_jar = self.prepare_vanilla_server_jar(output_root, candidate)
-        self.prepare_installer_dependencies(output_root, candidate, installer_path)
+        dependencies_ready = self.prepare_installer_dependencies(output_root, candidate, installer_path)
+        if candidate.loader in {LoaderType.FORGE.value, LoaderType.NEOFORGE.value} and (
+            not prepared_server_jar or not dependencies_ready
+        ):
+            missing_parts = []
+            if not prepared_server_jar:
+                missing_parts.append("Minecraft 原版服务端核心")
+            if not dependencies_ready:
+                missing_parts.append(f"{candidate.loader.title()} 安装器依赖")
+            raise RuntimeError(
+                f"{'、'.join(missing_parts)}未能全部下载，已停止启动安装器，避免内部下载长时间无响应。"
+                "请切换下载源后重试；已经下载成功的文件会保留并自动复用。"
+            )
         if candidate.loader == LoaderType.FABRIC.value:
             args = [
                 str(java_runtime.path),

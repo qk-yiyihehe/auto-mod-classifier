@@ -46,7 +46,7 @@ class ServerBuilderCommonService:
         cache_key = f"text::{url}"
         if cache_key in self.runtime.network_cache:
             return self.runtime.network_cache[cache_key]
-        text = http_get_text(url, self.runtime.download_source, timeout=30)
+        text = http_get_text(url, self.runtime.download_source, timeout=10, retry_rounds=2)
         self.runtime.network_cache[cache_key] = text
         return text
 
@@ -54,7 +54,7 @@ class ServerBuilderCommonService:
         cache_key = f"json::{url}"
         if cache_key in self.runtime.network_cache:
             return self.runtime.network_cache[cache_key]
-        data = http_get_json(url, self.runtime.download_source, timeout=30)
+        data = http_get_json(url, self.runtime.download_source, timeout=10, retry_rounds=2)
         self.runtime.network_cache[cache_key] = data
         return data
 
@@ -62,7 +62,7 @@ class ServerBuilderCommonService:
         cache_key = f"probe::{url}"
         if cache_key in self.runtime.network_cache:
             return bool(self.runtime.network_cache[cache_key])
-        available = http_probe(url, self.runtime.download_source, timeout=20)
+        available = http_probe(url, self.runtime.download_source, timeout=8, retry_rounds=1)
         self.runtime.network_cache[cache_key] = available
         return available
 
@@ -73,15 +73,19 @@ class ServerBuilderCommonService:
         reporter: Optional[DownloadStatsReporter] = None,
         display_name: Optional[str] = None,
         log_callback: Optional[Callable[[str], None]] = None,
+        *,
+        timeout: int = 15,
+        retry_rounds: int = 2,
     ) -> None:
         http_download(
             url,
             destination,
             self.runtime.download_source,
             reporter=reporter,
-            timeout=60,
+            timeout=timeout,
             display_name=display_name,
             log_callback=log_callback,
+            retry_rounds=retry_rounds,
             cancel_check=self.runtime.raise_if_cancelled,
         )
 
